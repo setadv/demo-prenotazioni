@@ -1,0 +1,15 @@
+{
+  "name": "demo-prenotazioni",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "node --test test/api.test.mjs",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "preview": "wrangler d1 migrations apply PREVIEW_DB --remote --config wrangler.preview-migrations.jsonc && wrangler preview"
+  },
+  "devDependencies": {
+    "wrangler": "4.157.0"
+  }
+}

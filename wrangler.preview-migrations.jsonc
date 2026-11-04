@@ -1,0 +1,14 @@
+// Usato solo per applicare le migrazioni al database di Preview.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "demo-prenotazioni-preview-migrations",
+  "compatibility_date": "2026-11-03",
+  "d1_databases": [
+    {
+      "binding": "PREVIEW_DB",
+      "database_name": "setadv-demo-prenotazioni-preview",
+      "database_id": "d1e1f5cd-22ff-46ae-b2c5-7c2e23854d89",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

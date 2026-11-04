@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Sala, Osteria del Melograno</title>
+  <link rel="stylesheet" href="/stile.css">
+</head>
+<body class="sala">
+  <section id="accesso" class="accesso" hidden>
+    <h1>Area riservata</h1>
+    <form id="login">
+      <label>Password
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <p id="errore-login" class="messaggio" role="alert" hidden></p>
+      <button class="azione" type="submit">Accedi</button>
+    </form>
+    <a href="/">Torna alle prenotazioni</a>
+  </section>
+
+  <main id="pannello" hidden>
+    <header class="testata">
+      <h1>Prenotazioni</h1>
+      <label class="scegli-data">Giorno
+        <input type="date" id="data">
+      </label>
+      <button id="esci" class="secondario" type="button">Esci</button>
+    </header>
+    <p id="ambiente" class="ambiente" hidden></p>
+    <p id="errore-sala" class="messaggio" role="alert" hidden></p>
+    <div id="elenco"></div>
+
+    <section id="area-foto" class="area-foto" hidden>
+      <h2>Foto del locale</h2>
+      <label>Scegli un'immagine JPG, PNG o WebP fino a 3 MB
+        <input type="file" id="file-foto" accept="image/jpeg,image/png,image/webp">
+      </label>
+      <p id="esito-foto" class="legenda" role="status"></p>
+    </section>
+  </main>
+  <script src="/admin.js" type="module"></script>
+</body>
+</html>

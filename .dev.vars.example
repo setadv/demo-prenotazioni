@@ -1,0 +1,2 @@
+ADMIN_PASSWORD=scegli-una-password-di-prova
+SESSION_SECRET=stringa-casuale-lunga-almeno-32-caratteri

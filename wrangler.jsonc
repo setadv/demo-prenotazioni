@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "demo-prenotazioni",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-03",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": { "enabled": true },
+  "vars": { "APP_ENV": "production" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "setadv-demo-prenotazioni-prod",
+      "database_id": "6fdf1f66-6659-4663-a694-f355b8b0607b",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "previews": {
+    "vars": { "APP_ENV": "preview" },
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "setadv-demo-prenotazioni-preview",
+        "database_id": "d1e1f5cd-22ff-46ae-b2c5-7c2e23854d89"
+      }
+    ]
+  }
+}
