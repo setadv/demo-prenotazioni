@@ -11,10 +11,9 @@ App di prova per un ristorante inventato, su Cloudflare Workers e D1. Non inseri
 |---|---|
 | Comando di build | lasciare vuoto |
 | Comando di deploy | `npm run deploy` |
-| Comando di Preview | `npm run preview` |
 | Branch di produzione | `main` |
 
-Il token di build deve avere il permesso D1 Edit, oltre ai permessi per i Workers, perché i comandi applicano le migrazioni del database.
+Il token di build deve avere il permesso D1 Edit, oltre ai permessi per i Workers. `npm run deploy` applica le migrazioni ai database di produzione e Preview, poi pubblica il Worker. Le Preview usano il comando predefinito `npx wrangler preview`: una nuova migrazione raggiunge il database di Preview dopo il deploy da `main`.
 
 ## Secret obbligatori
 
