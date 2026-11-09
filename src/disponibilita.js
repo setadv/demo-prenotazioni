@@ -93,8 +93,8 @@ export async function calcolaDisponibilita(env, data, persone, imp) {
 
 const INSERISCI = `
 INSERT INTO prenotazioni_v2 (id, codice, token_hash, data, ora, inizio_min, durata, persone, nome, telefono,
-  email, occasione, note, stato, origine, tavolo_id, cliente_id, sconto, creata_il, aggiornata_il)
-SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19
+  email, occasione, note, stato, origine, tavolo_id, cliente_id, sconto, creata_il, aggiornata_il, canale)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20
 WHERE ?16 IS NULL OR NOT EXISTS (
   SELECT 1 FROM prenotazioni_v2 p
   WHERE p.tavolo_id = ?16 AND p.data = ?4 AND p.stato IN ${SQL_ATTIVI}
@@ -132,6 +132,7 @@ export async function inserisciPrenotazione(env, riga, tavoliDaProvare) {
             riga.cliente_id,
             riga.sconto,
             new Date().toISOString(),
+            riga.canale ?? "email",
           )
           .run();
         if (esito.meta.changes) return tavoloId;

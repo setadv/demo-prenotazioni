@@ -1,6 +1,11 @@
 import {
   agenda,
+  eliminaMedia,
   elencoClienti,
+  invioManuale,
+  mostraMedia,
+  periodo,
+  salvaMedia,
   leggiConfigurazione,
   leggiSala,
   modificaCliente,
@@ -26,7 +31,6 @@ import {
 } from "./util.js";
 
 const SESSIONE_ORE = 8;
-const MAX_FOTO = 3 * 1024 * 1024;
 
 async function creaToken(env) {
   const scadenza = String(Date.now() + SESSIONE_ORE * 3600000);
@@ -60,37 +64,7 @@ async function login(request, env) {
   return json({ ok: true }, 200, { "set-cookie": cookieSessione(await creaToken(env), SESSIONE_ORE * 3600) });
 }
 
-function tipoImmagine(b) {
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
-  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
-  if (String.fromCharCode(...b.slice(0, 4)) === "RIFF" && String.fromCharCode(...b.slice(8, 12)) === "WEBP") return "image/webp";
-  return null;
-}
-
-async function caricaFoto(request, env) {
-  if (!env.FOTO) return errore("Lo spazio per le foto non è ancora attivo.", 503);
-  const corpo = new Uint8Array(await request.arrayBuffer());
-  if (!corpo.byteLength || corpo.byteLength > MAX_FOTO) return errore("Carica un'immagine fino a 3 MB.", 413);
-  const tipo = tipoImmagine(corpo);
-  if (!tipo) return errore("Carica un'immagine JPG, PNG o WebP.", 415);
-  await env.FOTO.put("locale", corpo, { httpMetadata: { contentType: tipo } });
-  return json({ ok: true });
-}
-
-async function mostraFoto(env) {
-  const foto = env.FOTO ? await env.FOTO.get("locale") : null;
-  if (!foto) return new Response(null, { status: 404 });
-  return new Response(foto.body, {
-    headers: {
-      "content-type": foto.httpMetadata?.contentType ?? "application/octet-stream",
-      "cache-control": "public, max-age=300",
-      "x-content-type-options": "nosniff",
-      "x-robots-tag": "noindex",
-    },
-  });
-}
-
-async function gestisciApi(request, env, url) {
+async function gestisciApi(request, env, url, ctx) {
   const { pathname: p } = url;
   const m = request.method;
 
@@ -101,8 +75,9 @@ async function gestisciApi(request, env, url) {
 
   if (p === "/api/ristorante" && m === "GET") return infoRistorante(env);
   if (p === "/api/disponibilita" && m === "GET") return disponibilita(url, env);
-  if (p === "/api/prenotazioni" && m === "POST") return nuovaPrenotazione(request, env);
-  if (p === "/api/foto" && m === "GET") return mostraFoto(env);
+  if (p === "/api/prenotazioni" && m === "POST") return nuovaPrenotazione(request, env, ctx);
+  const media = p.match(/^\/api\/media\/(logo|foto)$/);
+  if (media && m === "GET") return mostraMedia(env, media[1]);
   const pubblica = p.match(/^\/api\/prenotazioni\/([0-9a-f-]{36})(\/annulla)?$/);
   if (pubblica && m === "GET" && !pubblica[2]) return leggiPrenotazione(request, env, pubblica[1]);
   if (pubblica && m === "POST" && pubblica[2]) return annullaPrenotazione(request, env, pubblica[1]);
@@ -112,13 +87,15 @@ async function gestisciApi(request, env, url) {
     if (!(await autenticato(request, env))) return errore("Accedi per continuare.", 401);
     if (p === "/api/admin/sessione" && m === "GET") {
       const imp = await leggiImpostazioni(env);
-      return json({ ok: true, foto: Boolean(env.FOTO), ambiente: env.APP_ENV, nome: imp.nome });
+      return json({ ok: true, ambiente: env.APP_ENV, nome: imp.nome });
     }
     if (p === "/api/admin/logout" && m === "POST") return json({ ok: true }, 200, { "set-cookie": cookieSessione("", 0) });
     if (p === "/api/admin/agenda" && m === "GET") return agenda(url, env);
-    if (p === "/api/admin/prenotazioni" && m === "POST") return nuovaPrenotazioneGestore(request, env);
-    const pren = p.match(/^\/api\/admin\/prenotazioni\/([0-9a-f-]{36})$/);
-    if (pren && m === "PATCH") return modificaPrenotazione(request, env, pren[1]);
+    if (p === "/api/admin/periodo" && m === "GET") return periodo(url, env);
+    if (p === "/api/admin/prenotazioni" && m === "POST") return nuovaPrenotazioneGestore(request, env, ctx);
+    const pren = p.match(/^\/api\/admin\/prenotazioni\/([0-9a-f-]{36})(\/notifica)?$/);
+    if (pren && !pren[2] && m === "PATCH") return modificaPrenotazione(request, env, pren[1], ctx);
+    if (pren && pren[2] && m === "POST") return invioManuale(request, env, pren[1]);
     if (p === "/api/admin/sala" && m === "GET") return leggiSala(env);
     if (p === "/api/admin/sala" && m === "PUT") return salvaSala(request, env);
     if (p === "/api/admin/configurazione" && m === "GET") return leggiConfigurazione(env);
@@ -127,17 +104,19 @@ async function gestisciApi(request, env, url) {
     const cliente = p.match(/^\/api\/admin\/clienti\/([0-9a-f-]{36})$/);
     if (cliente && m === "PATCH") return modificaCliente(request, env, cliente[1]);
     if (p === "/api/admin/statistiche" && m === "GET") return statistiche(url, env);
-    if (p === "/api/admin/foto" && m === "PUT") return caricaFoto(request, env);
+    const mediaAdmin = p.match(/^\/api\/admin\/media\/(logo|foto)$/);
+    if (mediaAdmin && m === "PUT") return salvaMedia(request, env, mediaAdmin[1]);
+    if (mediaAdmin && m === "DELETE") return eliminaMedia(env, mediaAdmin[1]);
   }
   return errore("Percorso non trovato.", 404);
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     try {
-      return await gestisciApi(request, env, url);
+      return await gestisciApi(request, env, url, ctx);
     } catch (e) {
       if (e instanceof ErroreRichiesta) return errore(e.message, e.status);
       console.error(e);

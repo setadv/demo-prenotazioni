@@ -1,4 +1,5 @@
 import { candidati, caricaGiorno, inserisciPrenotazione, trovaOCreaCliente } from "./disponibilita.js";
+import { CANALI, canaliAttivi, componiMessaggio, inviaConferma, linkPrenotazione, registraInvioManuale } from "./notifiche.js";
 import {
   ErroreRichiesta,
   ORIGINI,
@@ -23,7 +24,7 @@ const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const FORME = ["tondo", "quadrato", "rettangolo"];
 
 const CAMPI_PRENOTAZIONE = `p.id, p.codice, p.data, p.ora, p.inizio_min, p.durata, p.persone, p.nome, p.telefono,
-  p.email, p.occasione, p.note, p.note_interne, p.stato, p.origine, p.tavolo_id, p.cliente_id, p.sconto, p.creata_il`;
+  p.email, p.occasione, p.note, p.note_interne, p.stato, p.origine, p.tavolo_id, p.cliente_id, p.sconto, p.creata_il, p.canale`;
 
 function richiediData(valore) {
   if (!dataValida(valore)) throw new ErroreRichiesta("Scegli una data valida.");
@@ -36,7 +37,8 @@ export async function agenda(url, env) {
     env.DB.prepare(
       `SELECT ${CAMPI_PRENOTAZIONE}, t.nome AS tavolo, c.note AS note_cliente,
          (SELECT COUNT(*) FROM prenotazioni_v2 x WHERE x.cliente_id = p.cliente_id AND x.stato = 'arrivata' AND x.id <> p.id) AS visite,
-         (SELECT COUNT(*) FROM prenotazioni_v2 x WHERE x.cliente_id = p.cliente_id AND x.stato = 'no_show' AND x.id <> p.id) AS no_show
+         (SELECT COUNT(*) FROM prenotazioni_v2 x WHERE x.cliente_id = p.cliente_id AND x.stato = 'no_show' AND x.id <> p.id) AS no_show,
+         (SELECT n.esito || '|' || n.canale || '|' || n.dettaglio FROM notifiche n WHERE n.prenotazione_id = p.id ORDER BY n.id DESC LIMIT 1) AS notifica
        FROM prenotazioni_v2 p
        LEFT JOIN tavoli t ON t.id = p.tavolo_id
        LEFT JOIN clienti c ON c.id = p.cliente_id
@@ -50,16 +52,27 @@ export async function agenda(url, env) {
     env.DB.prepare("SELECT id, nome, larghezza, altezza FROM sale WHERE attiva = 1 ORDER BY ordine, nome"),
   ]);
   const imp = await leggiImpostazioni(env);
+  const elenco = await Promise.all(
+    prenotazioni.results.map(async (p) => {
+      const [esito, canale, dettaglio] = p.notifica ? p.notifica.split("|") : [];
+      const conMessaggio = p.stato === "confermata" && (p.telefono || p.email);
+      return {
+        ...p,
+        notifica: p.notifica ? { esito, canale, dettaglio } : null,
+        messaggio: conMessaggio ? componiMessaggio(imp.messaggio_conferma, imp, p, await linkPrenotazione(env, url.origin, p.id)) : null,
+      };
+    }),
+  );
   return json({
     data,
     durata: imp.durata,
-    prenotazioni: prenotazioni.results,
+    prenotazioni: elenco,
     tavoli: tavoli.results,
     sale: sale.results,
   });
 }
 
-export async function nuovaPrenotazioneGestore(request, env) {
+export async function nuovaPrenotazioneGestore(request, env, ctx) {
   const corpo = await leggiJson(request);
   const imp = await leggiImpostazioni(env);
   const data = richiediData(corpo.data);
@@ -100,6 +113,7 @@ export async function nuovaPrenotazioneGestore(request, env) {
     origine,
     cliente_id: await trovaOCreaCliente(env, { nome, telefono, email }),
     sconto: 0,
+    canale: CANALI.includes(corpo.canale) ? corpo.canale : email ? "email" : "sms",
   };
 
   let tavolo = daProvare.length ? await inserisciPrenotazione(env, riga, daProvare) : false;
@@ -110,10 +124,13 @@ export async function nuovaPrenotazioneGestore(request, env) {
     }
     tavolo = await inserisciPrenotazione(env, riga, []);
   }
+  if (riga.stato === "confermata" && (telefono || email)) {
+    ctx.waitUntil(inviaConferma(env, imp, riga, new URL(request.url).origin));
+  }
   return json({ id: riga.id, codice: riga.codice, tavolo_id: tavolo || null }, 201);
 }
 
-export async function modificaPrenotazione(request, env, id) {
+export async function modificaPrenotazione(request, env, id, ctx) {
   const corpo = await leggiJson(request);
   const attuale = await env.DB.prepare("SELECT id, stato, tavolo_id, note_interne FROM prenotazioni_v2 WHERE id = ?")
     .bind(id)
@@ -143,6 +160,12 @@ export async function modificaPrenotazione(request, env, id) {
     .run();
   if (!esito.meta.changes) {
     throw new ErroreRichiesta("Il tavolo è già occupato in quell'orario da un'altra prenotazione.", 409);
+  }
+  if (stato === "confermata" && ["in_attesa", "annullata", "no_show"].includes(attuale.stato)) {
+    const p = await env.DB.prepare("SELECT id, codice, data, ora, persone, nome, telefono, email, canale FROM prenotazioni_v2 WHERE id = ?")
+      .bind(id)
+      .first();
+    if (p.telefono || p.email) ctx.waitUntil(inviaConferma(env, await leggiImpostazioni(env), p, new URL(request.url).origin));
   }
   return json({ ok: true, stato, tavolo_id: tavolo });
 }
@@ -259,6 +282,7 @@ export async function leggiConfigurazione(env) {
   ]);
   return json({
     impostazioni: imp,
+    canali: canaliAttivi(env),
     orari: orari.results,
     chiusure: chiusure.results,
     promozioni: promozioni.results.map((p) => ({ ...p, giorni: p.giorni.split(",").map(Number), attiva: Boolean(p.attiva) })),
@@ -277,9 +301,10 @@ export async function salvaConfigurazione(request, env) {
     durata: intero(i.durata, 30, 300, "Durata del tavolo"),
     intervallo: [15, 30, 60].includes(Number(i.intervallo)) ? Number(i.intervallo) : 15,
     anticipo: intero(i.anticipo, 0, 1440, "Anticipo minimo"),
-    giorni_prenotabili: intero(i.giorni_prenotabili, 1, 180, "Giorni prenotabili"),
+    giorni_prenotabili: intero(i.giorni_prenotabili, 1, 365, "Giorni prenotabili"),
     max_persone_online: intero(i.max_persone_online, 1, 30, "Persone massime online"),
     conferma_automatica: i.conferma_automatica ? 1 : 0,
+    messaggio_conferma: testo(i.messaggio_conferma, 600, { min: 20, campo: "Il messaggio di conferma" }),
   };
 
   if (!Array.isArray(corpo.orari) || corpo.orari.length > 40) throw new ErroreRichiesta("Orari non validi.");
@@ -392,4 +417,79 @@ export async function statistiche(url, env) {
   return json({ da, a: oggi, serie, origini: perOrigine.results, prossimi_7_giorni: prossimi.results[0] });
 }
 
-export { STATI_ATTIVI };
+export async function invioManuale(request, env, id) {
+  const corpo = await leggiJson(request);
+  if (!CANALI.includes(corpo.canale)) throw new ErroreRichiesta("Canale non valido.");
+  const p = await env.DB.prepare("SELECT id FROM prenotazioni_v2 WHERE id = ?").bind(id).first();
+  if (!p) throw new ErroreRichiesta("Prenotazione non trovata.", 404);
+  await registraInvioManuale(env, id, corpo.canale);
+  return json({ ok: true });
+}
+
+export async function periodo(url, env) {
+  const da = richiediData(url.searchParams.get("da"));
+  const a = richiediData(url.searchParams.get("a"));
+  if (a < da || Date.parse(a) - Date.parse(da) > 42 * 86400000) throw new ErroreRichiesta("Scegli un periodo fino a 6 settimane.");
+  const [prenotazioni, chiusure, orari] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT p.id, p.data, p.ora, p.inizio_min, p.persone, p.nome, p.stato, p.origine, t.nome AS tavolo
+       FROM prenotazioni_v2 p LEFT JOIN tavoli t ON t.id = p.tavolo_id
+       WHERE p.data BETWEEN ? AND ? ORDER BY p.data, p.inizio_min, p.creata_il`,
+    ).bind(da, a),
+    env.DB.prepare("SELECT data, motivo FROM chiusure WHERE data BETWEEN ? AND ?").bind(da, a),
+    env.DB.prepare("SELECT DISTINCT giorno FROM orari"),
+  ]);
+  return json({
+    da,
+    a,
+    prenotazioni: prenotazioni.results,
+    chiusure: chiusure.results,
+    giorni_aperti: orari.results.map((o) => o.giorno),
+  });
+}
+
+const MEDIA = { logo: 512 * 1024, foto: 1536 * 1024 };
+
+function tipoImmagine(b) {
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (String.fromCharCode(...b.slice(0, 4)) === "RIFF" && String.fromCharCode(...b.slice(8, 12)) === "WEBP") return "image/webp";
+  return null;
+}
+
+export async function salvaMedia(request, env, chiave) {
+  const massimo = MEDIA[chiave];
+  const dati = new Uint8Array(await request.arrayBuffer());
+  if (!dati.byteLength || dati.byteLength > massimo) {
+    throw new ErroreRichiesta(`Carica un'immagine fino a ${Math.round(massimo / 1024)} KB.`, 413);
+  }
+  const tipo = tipoImmagine(dati);
+  if (!tipo) throw new ErroreRichiesta("Carica un'immagine JPG, PNG o WebP.", 415);
+  await env.DB.prepare(
+    `INSERT INTO media (chiave, tipo, dati, aggiornato_il) VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT (chiave) DO UPDATE SET tipo = ?2, dati = ?3, aggiornato_il = ?4`,
+  )
+    .bind(chiave, tipo, dati.buffer, new Date().toISOString())
+    .run();
+  return json({ ok: true });
+}
+
+export async function eliminaMedia(env, chiave) {
+  await env.DB.prepare("DELETE FROM media WHERE chiave = ?").bind(chiave).run();
+  return json({ ok: true });
+}
+
+export async function mostraMedia(env, chiave) {
+  const m = await env.DB.prepare("SELECT tipo, dati FROM media WHERE chiave = ?").bind(chiave).first();
+  if (!m) return new Response(null, { status: 404 });
+  return new Response(new Uint8Array(m.dati), {
+    headers: {
+      "content-type": m.tipo,
+      "cache-control": "public, max-age=300",
+      "x-content-type-options": "nosniff",
+      "x-robots-tag": "noindex",
+    },
+  });
+}
+
+export { STATI_ATTIVI, MEDIA };

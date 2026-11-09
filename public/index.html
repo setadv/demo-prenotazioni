@@ -11,6 +11,7 @@
 <body class="pagina">
   <aside class="insegna">
     <div class="insegna-testo">
+      <img id="logo" class="logo" alt="" hidden>
       <h1 id="nome-ristorante">Prenota un tavolo</h1>
       <p id="indirizzo"></p>
       <p id="prezzo"></p>
@@ -30,7 +31,8 @@
 
       <fieldset>
         <legend>Quando?</legend>
-        <div id="giorni" class="giorni"></div>
+        <div id="calendario" class="calendario"></div>
+        <p id="data-scelta" class="data-scelta" aria-live="polite"></p>
       </fieldset>
 
       <fieldset>
@@ -48,7 +50,7 @@
           <label>Telefono
             <input name="telefono" type="tel" autocomplete="tel" required maxlength="30" placeholder="333 0000000">
           </label>
-          <label>Email (facoltativa)
+          <label><span id="etichetta-email">Email</span>
             <input name="email" type="email" autocomplete="email" maxlength="254" placeholder="maria@esempio.it">
           </label>
           <label>Occasione
@@ -62,6 +64,12 @@
               <option value="altro">Altro</option>
             </select>
           </label>
+          <fieldset class="largo canali">
+            <legend class="etichetta-campo">Come vuoi ricevere la conferma?</legend>
+            <label class="spunta"><input type="radio" name="canale" value="email" checked> Email</label>
+            <label class="spunta"><input type="radio" name="canale" value="sms"> SMS</label>
+            <label class="spunta"><input type="radio" name="canale" value="whatsapp"> WhatsApp</label>
+          </fieldset>
           <label class="largo">Richieste per il ristorante (facoltative)
             <textarea name="note" rows="2" maxlength="300" placeholder="Seggiolone, intolleranze, tavolo all'aperto"></textarea>
           </label>

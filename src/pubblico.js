@@ -1,3 +1,4 @@
+import { CANALI, inviaConferma, tokenPrenotazione, tokenValido } from "./notifiche.js";
 import {
   calcolaDisponibilita,
   candidati,
@@ -26,20 +27,20 @@ import {
   oraRoma,
   oraValida,
   registraTentativo,
-  sha256,
   spostaData,
   testo,
   tokenCasuale,
-  uguali,
 } from "./util.js";
 
 export async function infoRistorante(env) {
   const imp = await leggiImpostazioni(env);
   const oggi = oraRoma().data;
-  const [orari, chiusure] = await env.DB.batch([
+  const [orari, chiusure, media] = await env.DB.batch([
     env.DB.prepare("SELECT giorno, servizio, inizio, fine FROM orari ORDER BY giorno, inizio"),
     env.DB.prepare("SELECT data FROM chiusure WHERE data BETWEEN ? AND ?").bind(oggi, spostaData(oggi, imp.giorni_prenotabili)),
+    env.DB.prepare("SELECT chiave, aggiornato_il FROM media"),
   ]);
+  const versione = (k) => media.results.find((m) => m.chiave === k)?.aggiornato_il ?? null;
   return json({
     nome: imp.nome,
     indirizzo: imp.indirizzo,
@@ -50,6 +51,8 @@ export async function infoRistorante(env) {
     giorni_prenotabili: imp.giorni_prenotabili,
     orari: orari.results,
     chiusure: chiusure.results.map((c) => c.data),
+    logo: versione("logo"),
+    foto: versione("foto"),
     oggi,
   });
 }
@@ -60,7 +63,7 @@ export async function disponibilita(url, env) {
   return json(await calcolaDisponibilita(env, url.searchParams.get("data"), persone, imp));
 }
 
-export async function nuovaPrenotazione(request, env) {
+export async function nuovaPrenotazione(request, env, ctx) {
   const corpo = await leggiJson(request);
   if (corpo.sito) return json({ id: crypto.randomUUID(), codice: codiceCasuale(), token: tokenCasuale(), stato: "in_attesa" }, 201);
 
@@ -76,6 +79,8 @@ export async function nuovaPrenotazione(request, env) {
   const email = testo(corpo.email, 254, { campo: "L'email" });
   if (email && !emailValida(email)) throw new ErroreRichiesta("Scrivi un'email valida o lascia il campo vuoto.");
   const occasione = OCCASIONI.includes(corpo.occasione ?? "") ? corpo.occasione ?? "" : "";
+  const canale = CANALI.includes(corpo.canale) ? corpo.canale : email ? "email" : "sms";
+  if (canale === "email" && !email) throw new ErroreRichiesta("Per ricevere la conferma via email scrivi il tuo indirizzo.");
   const note = testo(corpo.note, 300, { campo: "Le note" });
   if (corpo.privacy !== true) throw new ErroreRichiesta("Per prenotare devi accettare l'uso dei dati.");
   if (!oraValida(corpo.ora)) throw new ErroreRichiesta("Scegli un orario.");
@@ -91,11 +96,12 @@ export async function nuovaPrenotazione(request, env) {
 
   const { tavoli } = await caricaGiorno(env, corpo.data);
   const tavoliIds = candidati(tavoli, persone, true).map((t) => t.id);
-  const token = tokenCasuale();
+  const id = crypto.randomUUID();
+  const token = await tokenPrenotazione(env, id);
   const riga = {
-    id: crypto.randomUUID(),
+    id,
     codice: codiceCasuale(),
-    token_hash: await sha256(token),
+    token_hash: null,
     data: corpo.data,
     ora: corpo.ora,
     inizio_min: aMinuti(corpo.ora),
@@ -110,12 +116,14 @@ export async function nuovaPrenotazione(request, env) {
     origine: "online",
     cliente_id: await trovaOCreaCliente(env, { nome, telefono, email }),
     sconto: slot.sconto,
+    canale,
   };
   const tavolo = await inserisciPrenotazione(env, riga, tavoliIds);
   if (tavolo === false) throw new ErroreRichiesta("Questo orario non è più disponibile. Scegline un altro.", 409);
 
   await registraTentativo(env, chiave);
-  return json({ id: riga.id, codice: riga.codice, token, stato: riga.stato, sconto: riga.sconto }, 201);
+  if (riga.stato === "confermata") ctx.waitUntil(inviaConferma(env, imp, riga, new URL(request.url).origin));
+  return json({ id: riga.id, codice: riga.codice, token, stato: riga.stato, sconto: riga.sconto, canale }, 201);
 }
 
 async function prenotazioneConToken(request, env, id) {
@@ -126,7 +134,7 @@ async function prenotazioneConToken(request, env, id) {
   )
     .bind(id)
     .first();
-  if (!p || !p.token_hash || !token || !uguali(await sha256(token), p.token_hash)) {
+  if (!p || !(await tokenValido(env, p.id, token, p.token_hash))) {
     throw new ErroreRichiesta("Prenotazione non trovata. Controlla il link ricevuto.", 404);
   }
   return p;

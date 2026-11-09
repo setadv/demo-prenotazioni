@@ -18,7 +18,7 @@ export async function vistaSala(contenitore) {
   let tavoloScelto = null;
   let daAssegnare = null;
 
-  const ora = h("input", { type: "range", min: DA, max: A, step: 15, value: minuti, "aria-label": "Ora" });
+  const ora = h("input", { type: "range", id: "cursore-ora", min: DA, max: A, step: 15, value: minuti });
   const oraTesto = h("output", { class: "ora-scelta" }, daMinuti(minuti));
   const schede = h("div", { class: "schede", role: "tablist", "aria-label": "Sale" });
   const area = h("div", { class: "area-pianta" });
@@ -29,6 +29,22 @@ export async function vistaSala(contenitore) {
     oraTesto.textContent = daMinuti(minuti);
     disegna();
   });
+
+  function impostaMinuti(m) {
+    minuti = Math.min(Math.max(m, DA), A);
+    ora.value = minuti;
+    oraTesto.textContent = daMinuti(minuti);
+    if (dati) disegna();
+  }
+  const passo = (delta) => impostaMinuti(minuti + delta);
+  const adesso = () => {
+    if (condiviso.data !== oggiRoma()) {
+      condiviso.data = oggiRoma();
+      contenitore.querySelector("input[type=date]").value = condiviso.data;
+      impostaMinuti(minutiIniziali());
+      ricarica();
+    } else impostaMinuti(minutiIniziali());
+  };
 
   const ricarica = async () => {
     try {
@@ -238,7 +254,17 @@ export async function vistaSala(contenitore) {
 
   contenitore.append(
     h("div", { class: "testata-vista" }, h("h1", {}, "Sala")),
-    h("div", { class: "strumenti" }, campoData(ricarica), h("label", { class: "cursore-ora" }, "Ora", ora, oraTesto)),
+    h("div", { class: "strumenti" }, campoData(ricarica)),
+    h(
+      "div",
+      { class: "barra-ora" },
+      h("label", { class: "etichetta-ora", htmlFor: "cursore-ora" }, "Ora"),
+      h("button", { type: "button", class: "secondario", "aria-label": "15 minuti prima", onclick: () => passo(-15) }, "‹"),
+      ora,
+      h("button", { type: "button", class: "secondario", "aria-label": "15 minuti dopo", onclick: () => passo(15) }, "›"),
+      oraTesto,
+      h("button", { type: "button", class: "secondario", onclick: adesso }, "Adesso"),
+    ),
     schede,
     h("div", { class: "layout-sala" }, area, pannello),
   );

@@ -7,7 +7,6 @@ import {
   api,
   apriDialogo,
   avviso,
-  campoData,
   chiudiDialogo,
   condiviso,
   daMinuti,
@@ -15,7 +14,9 @@ import {
   h,
   oraRoma,
   oggiRoma,
+  numeroWhatsApp,
   persone,
+  spostaData,
   testoData,
 } from "./comune.js";
 
@@ -66,6 +67,47 @@ export function selettoreTavolo(p, tavoli, sale, onCambia) {
   );
   select.addEventListener("change", () => onCambia(select.value || null, select));
   return select;
+}
+
+const NOMI_CANALE = { email: "email", sms: "SMS", whatsapp: "WhatsApp" };
+
+function bloccoMessaggio(p, ricarica) {
+  if (!p.messaggio && !p.notifica) return null;
+  const n = p.notifica;
+  let stato = null;
+  if (n?.esito === "inviata") stato = h("span", { class: "invio ok" }, `Conferma inviata via ${NOMI_CANALE[n.canale]}`);
+  else if (n?.esito === "manuale") stato = h("span", { class: "invio ok" }, `Conferma inviata a mano via ${NOMI_CANALE[n.canale]}`);
+  else if (n?.esito === "errore") stato = h("span", { class: "invio errore" }, `Invio non riuscito: ${n.dettaglio}`);
+  else if (p.messaggio) stato = h("span", { class: "invio attesa" }, `Conferma da inviare, preferisce ${NOMI_CANALE[p.canale] ?? "email"}`);
+  if (!p.messaggio) return h("p", { class: "messaggi" }, stato);
+
+  const segna = (canale) => async () => {
+    try {
+      await api(`/api/admin/prenotazioni/${p.id}/notifica`, { metodo: "POST", corpo: { canale } });
+      setTimeout(ricarica, 300);
+    } catch (e) {
+      avviso(e.message, "errore");
+    }
+  };
+  const testo = encodeURIComponent(p.messaggio);
+  const numero = numeroWhatsApp(p.telefono);
+  const link = [];
+  if (numero) {
+    link.push(
+      h("a", { class: `invia-link${p.canale === "whatsapp" ? " preferito" : ""}`, href: `https://wa.me/${numero}?text=${testo}`, target: "_blank", rel: "noopener", onclick: segna("whatsapp") }, "WhatsApp"),
+      h("a", { class: `invia-link${p.canale === "sms" ? " preferito" : ""}`, href: `sms:+${numero}?body=${testo}`, onclick: segna("sms") }, "SMS"),
+    );
+  }
+  if (p.email) {
+    link.push(
+      h("a", {
+        class: `invia-link${p.canale === "email" ? " preferito" : ""}`,
+        href: `mailto:${p.email}?subject=${encodeURIComponent("Prenotazione confermata")}&body=${testo}`,
+        onclick: segna("email"),
+      }, "Email"),
+    );
+  }
+  return h("div", { class: "messaggi" }, stato, link.length ? h("span", { class: "legenda" }, "Invia:") : null, link);
 }
 
 function rigaPrenotazione(p, dati, ricarica) {
@@ -124,6 +166,7 @@ function rigaPrenotazione(p, dati, ricarica) {
       etichette.length ? h("p", { class: "etichette" }, etichette) : null,
       p.note ? h("p", { class: "nota" }, `Richiesta: ${p.note}`) : null,
       p.note_cliente ? h("p", { class: "nota" }, `Note sul cliente: ${p.note_cliente}`) : null,
+      bloccoMessaggio(p, ricarica),
     ),
     h("div", { class: "gestione-riga" }, h("label", { class: "piccola" }, "Tavolo", tavolo), h("div", { class: "azioni" }, azioni)),
   );
@@ -216,12 +259,36 @@ export function apriNuovaPrenotazione({ tavoli, sale, data, ora, tavolo_id, onSa
   modulo.querySelector("[name=nome]").focus();
 }
 
+
+const VISTE = { giorno: "Giorno", settimana: "Settimana", mese: "Mese" };
+const giornoSett = (iso) => new Date(`${iso}T12:00:00Z`).getUTCDay();
+const inizioSettimana = (iso) => spostaData(iso, -((giornoSett(iso) + 6) % 7));
+const meseDopo = (iso, n) => {
+  const [a, m] = iso.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1 + n, 1)).toISOString().slice(0, 10);
+};
+const fineMese = (iso) => spostaData(meseDopo(iso, 1), -1);
+
+function totali(prenotazioni) {
+  const attive = prenotazioni.filter((p) => ATTIVI.includes(p.stato));
+  return {
+    prenotazioni: attive.length,
+    coperti: attive.reduce((s, p) => s + p.persone, 0),
+    daConfermare: prenotazioni.filter((p) => p.stato === "in_attesa").length,
+  };
+}
+
 export async function vistaAgenda(contenitore) {
+  let vista = condiviso.vistaAgenda ?? "giorno";
   let filtro = "tutto";
   let dati = null;
+  let sala = null;
+
+  const titolo = h("h1");
   const riepilogo = h("p", { class: "riepilogo", "aria-live": "polite" });
-  const elenco = h("div", { class: "elenco" });
-  const chips = h(
+  const corpo = h("div", { class: "corpo-agenda" });
+  const dataInput = h("input", { type: "date", "aria-label": "Vai alla data" });
+  const filtri = h(
     "div",
     { class: "filtri", role: "group", "aria-label": "Servizio" },
     Object.entries(FILTRI).map(([k, v]) =>
@@ -231,42 +298,92 @@ export async function vistaAgenda(contenitore) {
         "aria-pressed": k === filtro ? "true" : "false",
         onclick: (e) => {
           filtro = k;
-          chips.querySelectorAll(".filtro").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget)));
-          disegna();
+          filtri.querySelectorAll(".filtro").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget)));
+          disegnaGiorno();
         },
       }, v),
     ),
   );
+  const segmenti = h(
+    "div",
+    { class: "segmenti", role: "group", "aria-label": "Vista dell'agenda" },
+    Object.entries(VISTE).map(([k, v]) =>
+      h("button", { type: "button", "aria-pressed": k === vista ? "true" : "false", dataset: { vista: k }, onclick: () => cambiaVista(k) }, v),
+    ),
+  );
 
-  const ricarica = async () => {
+  function cambiaVista(k) {
+    vista = k;
+    condiviso.vistaAgenda = k;
+    segmenti.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.vista === k)));
+    ricarica();
+  }
+
+  function apriGiorno(iso) {
+    condiviso.data = iso;
+    cambiaVista("giorno");
+  }
+
+  function sposta(n) {
+    if (n === 0) condiviso.data = oggiRoma();
+    else if (vista === "mese") condiviso.data = meseDopo(condiviso.data, n);
+    else condiviso.data = spostaData(condiviso.data, vista === "settimana" ? n * 7 : n);
+    ricarica();
+  }
+
+  dataInput.addEventListener("change", () => {
+    if (!dataInput.value) return;
+    condiviso.data = dataInput.value;
+    ricarica();
+  });
+
+  const navigatore = h(
+    "div",
+    { class: "scegli-giorno" },
+    h("button", { type: "button", class: "secondario", onclick: () => sposta(-1), "aria-label": "Periodo precedente" }, "‹"),
+    dataInput,
+    h("button", { type: "button", class: "secondario", onclick: () => sposta(1), "aria-label": "Periodo successivo" }, "›"),
+    h("button", { type: "button", class: "secondario", onclick: () => sposta(0) }, "Oggi"),
+  );
+
+  async function ricarica() {
+    dataInput.value = condiviso.data;
+    filtri.hidden = vista !== "giorno";
+    corpo.replaceChildren(h("p", { class: "legenda" }, "Carico l'agenda."));
     try {
-      dati = await api(`/api/admin/agenda?data=${condiviso.data}`);
-      disegna();
+      if (vista === "giorno") {
+        dati = await api(`/api/admin/agenda?data=${condiviso.data}`);
+        sala = { tavoli: dati.tavoli, sale: dati.sale };
+        disegnaGiorno();
+      } else {
+        const da = vista === "settimana" ? inizioSettimana(condiviso.data) : inizioSettimana(`${condiviso.data.slice(0, 7)}-01`);
+        const a = vista === "settimana" ? spostaData(da, 6) : spostaData(inizioSettimana(fineMese(condiviso.data)), 6);
+        const periodo = await api(`/api/admin/periodo?da=${da}&a=${a}`);
+        if (vista === "settimana") disegnaSettimana(periodo);
+        else disegnaMese(periodo);
+      }
     } catch (e) {
-      if (e.status !== 401) elenco.replaceChildren(h("p", { class: "messaggio" }, e.message));
+      if (e.status !== 401) corpo.replaceChildren(h("p", { class: "messaggio" }, e.message));
     }
-  };
+  }
 
-  function disegna() {
+  function disegnaGiorno() {
     titolo.textContent = testoData(condiviso.data);
     const visibili = dati.prenotazioni.filter((p) =>
       filtro === "tutto" ? true : filtro === "pranzo" ? p.inizio_min < 17 * 60 : p.inizio_min >= 17 * 60,
     );
-    const attive = visibili.filter((p) => ATTIVI.includes(p.stato));
-    const coperti = attive.reduce((s, p) => s + p.persone, 0);
-    const daConfermare = visibili.filter((p) => p.stato === "in_attesa").length;
-    const senzaTavolo = attive.filter((p) => !p.tavolo_id).length;
+    const t = totali(visibili);
+    const senzaTavolo = visibili.filter((p) => ATTIVI.includes(p.stato) && !p.tavolo_id).length;
     riepilogo.replaceChildren(
       ...[
-      `${attive.length} ${attive.length === 1 ? "prenotazione" : "prenotazioni"} per ${coperti} coperti.`,
-      daConfermare ? h("strong", { class: "da-fare" }, ` ${daConfermare} da confermare.`) : null,
-      senzaTavolo ? h("strong", { class: "da-fare" }, ` ${senzaTavolo} senza tavolo.`) : null,
+        `${t.prenotazioni} ${t.prenotazioni === 1 ? "prenotazione" : "prenotazioni"} per ${t.coperti} coperti.`,
+        t.daConfermare ? h("strong", { class: "da-fare" }, ` ${t.daConfermare} da confermare.`) : null,
+        senzaTavolo ? h("strong", { class: "da-fare" }, ` ${senzaTavolo} senza tavolo.`) : null,
       ].filter(Boolean),
     );
-
-    elenco.replaceChildren();
+    corpo.replaceChildren();
     if (!visibili.length) {
-      elenco.append(
+      corpo.append(
         h(
           "div",
           { class: "vuoto" },
@@ -276,45 +393,133 @@ export async function vistaAgenda(contenitore) {
       );
       return;
     }
-    const ore = [...new Set(visibili.map((p) => p.ora))];
-    for (const ora of ore) {
+    for (const ora of [...new Set(visibili.map((p) => p.ora))]) {
       const gruppo = visibili.filter((p) => p.ora === ora);
-      const c = gruppo.filter((p) => ATTIVI.includes(p.stato)).reduce((s, p) => s + p.persone, 0);
-      elenco.append(
+      corpo.append(
         h(
           "section",
           { class: "turno" },
-          h("h2", {}, ora, h("small", {}, `${c} coperti`)),
+          h("h2", {}, ora, h("small", {}, `${totali(gruppo).coperti} coperti`)),
           gruppo.map((p) => rigaPrenotazione(p, dati, ricarica)),
         ),
       );
     }
   }
 
-  const nuova = () =>
+  function vocePeriodo(p) {
+    return h(
+      "button",
+      {
+        type: "button",
+        class: `voce stato-${p.stato}`,
+        onclick: () => apriGiorno(p.data),
+        "aria-label": `${p.ora}, ${p.nome}, ${persone(p.persone)}, ${STATI[p.stato].toLowerCase()}`,
+      },
+      h("span", { class: "voce-ora" }, p.ora),
+      h("span", { class: "voce-nome" }, p.nome),
+      h("span", { class: "voce-persone" }, String(p.persone)),
+    );
+  }
+
+  const chiusoIl = (periodo, iso) =>
+    periodo.chiusure.find((c) => c.data === iso)?.motivo || (!periodo.giorni_aperti.includes(giornoSett(iso)) ? "Chiuso" : null);
+
+  function disegnaSettimana(periodo) {
+    titolo.textContent = `Settimana dal ${testoData(periodo.da, { day: "numeric", month: "long" })} al ${testoData(periodo.a, { day: "numeric", month: "long" })}`;
+    const t = totali(periodo.prenotazioni);
+    riepilogo.replaceChildren(
+      ...[
+        `${t.prenotazioni} ${t.prenotazioni === 1 ? "prenotazione" : "prenotazioni"} per ${t.coperti} coperti.`,
+        t.daConfermare ? h("strong", { class: "da-fare" }, ` ${t.daConfermare} da confermare.`) : null,
+      ].filter(Boolean),
+    );
+    const colonne = [];
+    for (let i = 0; i < 7; i += 1) {
+      const iso = spostaData(periodo.da, i);
+      const del = periodo.prenotazioni.filter((p) => p.data === iso);
+      const tg = totali(del);
+      const chiuso = chiusoIl(periodo, iso);
+      colonne.push(
+        h(
+          "section",
+          { class: `colonna-giorno${iso === oggiRoma() ? " oggi" : ""}${chiuso ? " chiuso" : ""}` },
+          h(
+            "button",
+            { type: "button", class: "testa-giorno", onclick: () => apriGiorno(iso) },
+            h("span", { class: "nome-giorno" }, testoData(iso, { weekday: "short", day: "numeric" })),
+            h("span", { class: "legenda" }, chiuso ?? (tg.prenotazioni ? `${tg.coperti} coperti` : "Nessuna")),
+          ),
+          del.length ? h("div", { class: "voci" }, del.map(vocePeriodo)) : null,
+        ),
+      );
+    }
+    corpo.replaceChildren(h("div", { class: "settimana" }, colonne));
+  }
+
+  function disegnaMese(periodo) {
+    const mese = condiviso.data.slice(0, 7);
+    titolo.textContent = new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${mese}-15T12:00:00Z`));
+    const delMese = periodo.prenotazioni.filter((p) => p.data.startsWith(mese));
+    const t = totali(delMese);
+    riepilogo.replaceChildren(
+      ...[
+        `${t.prenotazioni} ${t.prenotazioni === 1 ? "prenotazione" : "prenotazioni"} per ${t.coperti} coperti nel mese.`,
+        t.daConfermare ? h("strong", { class: "da-fare" }, ` ${t.daConfermare} da confermare.`) : null,
+      ].filter(Boolean),
+    );
+    const celle = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"].map((g) => h("span", { class: "intestazione-mese" }, g));
+    for (let iso = periodo.da; iso <= periodo.a; iso = spostaData(iso, 1)) {
+      const del = periodo.prenotazioni.filter((p) => p.data === iso);
+      const tg = totali(del);
+      const chiuso = chiusoIl(periodo, iso);
+      const fuori = !iso.startsWith(mese);
+      celle.push(
+        h(
+          "button",
+          {
+            type: "button",
+            class: `cella-mese${fuori ? " fuori" : ""}${iso === oggiRoma() ? " oggi" : ""}${chiuso ? " chiuso" : ""}`,
+            onclick: () => apriGiorno(iso),
+            "aria-label": `${testoData(iso)}: ${chiuso ? "chiuso" : `${tg.prenotazioni} prenotazioni, ${tg.coperti} coperti`}${tg.daConfermare ? `, ${tg.daConfermare} da confermare` : ""}`,
+          },
+          h("span", { class: "numero-giorno" }, String(Number(iso.slice(8)))),
+          chiuso && !tg.prenotazioni
+            ? h("span", { class: "legenda" }, "Chiuso")
+            : tg.prenotazioni
+              ? [h("span", { class: "conteggio-mese" }, `${tg.coperti} coperti`), h("span", { class: "legenda" }, `${tg.prenotazioni} pren.`)]
+              : null,
+          tg.daConfermare ? h("span", { class: "badge-mese" }, `${tg.daConfermare} da confermare`) : null,
+        ),
+      );
+    }
+    corpo.replaceChildren(h("div", { class: "mese" }, celle));
+  }
+
+  async function nuova() {
+    if (!sala) sala = await api("/api/admin/sala");
     apriNuovaPrenotazione({
-      tavoli: dati.tavoli,
-      sale: dati.sale,
+      tavoli: sala.tavoli,
+      sale: sala.sale,
       data: condiviso.data,
-      ora: condiviso.data === oggiRoma() ? daMinuti(Math.floor(aMinuti(oraRoma()) / 15) * 15) : "20:00",
+      ora: condiviso.data === oggiRoma() ? daMinuti(Math.min(Math.floor(aMinuti(oraRoma()) / 15) * 15, 23 * 60 + 45)) : "20:00",
       onSalvata: async (data) => {
         condiviso.data = data;
-        contenitore.querySelector("input[type=date]").value = data;
-        await ricarica();
+        if (vista === "giorno") await ricarica();
+        else apriGiorno(data);
       },
     });
+  }
 
-  const titolo = h("h1", {}, testoData(condiviso.data));
   contenitore.append(
     h(
       "div",
       { class: "testata-vista" },
       titolo,
-      h("button", { type: "button", class: "azione compatta", onclick: () => dati && nuova() }, "Nuova prenotazione"),
+      h("button", { type: "button", class: "azione compatta", onclick: () => nuova().catch((e) => avviso(e.message, "errore")) }, "Nuova prenotazione"),
     ),
-    h("div", { class: "strumenti" }, campoData(ricarica), chips),
+    h("div", { class: "strumenti strumenti-agenda" }, segmenti, navigatore, filtri),
     riepilogo,
-    elenco,
+    corpo,
   );
   await ricarica();
   return {};

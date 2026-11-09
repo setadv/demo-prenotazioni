@@ -123,6 +123,16 @@ export function chiudiDialogo() {
   if (d.open) d.close();
 }
 
+/** Numero per i link WhatsApp e SMS: solo cifre, con prefisso internazionale (+39 per i numeri italiani senza prefisso). */
+export function numeroWhatsApp(tel) {
+  const pulito = String(tel ?? "").trim();
+  let cifre = pulito.replace(/\D/g, "");
+  if (pulito.startsWith("+")) return cifre.length >= 8 ? cifre : null;
+  if (cifre.startsWith("00")) cifre = cifre.slice(2);
+  else if (/^3\d{8,9}$/.test(cifre) || /^0\d{5,10}$/.test(cifre)) cifre = `39${cifre}`;
+  return cifre.length >= 10 ? cifre : null;
+}
+
 export function etichettaTavolo(t) {
   return `${t.nome} (${t.posti_min === t.posti_max ? t.posti_max : `${t.posti_min}-${t.posti_max}`} posti)`;
 }

@@ -1,13 +1,33 @@
 import { GIORNI, ORDINE_GIORNI, api, apriDialogo, avviso, chiudiDialogo, h, oggiRoma } from "./comune.js";
 
-export async function vistaImpostazioni(contenitore, sessione) {
+/** Riduce le immagini troppo grandi prima del caricamento. Il PNG resta PNG per conservare la trasparenza. */
+async function ridimensiona(file, maxLato, maxByte) {
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new Error("Scegli un'immagine JPG, PNG o WebP.");
+  const bitmap = await createImageBitmap(file);
+  const scala = Math.min(1, maxLato / Math.max(bitmap.width, bitmap.height));
+  if (scala === 1 && file.size <= maxByte) return file;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scala);
+  canvas.height = Math.round(bitmap.height * scala);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const tipo = file.type === "image/png" ? "image/png" : "image/jpeg";
+  for (const qualita of [0.86, 0.75, 0.62]) {
+    const blob = await new Promise((ok) => canvas.toBlob(ok, tipo, qualita));
+    if (blob && blob.size <= maxByte) return blob;
+    if (tipo === "image/png") break;
+  }
+  throw new Error(`L'immagine è ancora troppo pesante: usane una più leggera di ${Math.round(maxByte / 1024)} KB.`);
+}
+
+export async function vistaImpostazioni(contenitore) {
   let conf = await api("/api/admin/configurazione");
   let modificato = false;
   const modulo = h("form", { class: "impostazioni", novalidate: true });
   const salva = h("button", { type: "submit", class: "azione compatta" }, "Salva le impostazioni");
   const errore = h("p", { class: "messaggio", role: "alert", hidden: true });
 
-  const segna = () => {
+  const segna = (e) => {
+    if (e?.target?.type === "file") return;
     modificato = true;
   };
   modulo.addEventListener("input", segna);
@@ -113,7 +133,7 @@ export async function vistaImpostazioni(contenitore, sessione) {
             h("select", { name: "intervallo" }, [15, 30, 60].map((m) => h("option", { value: m, selected: m === i.intervallo }, `${m} minuti`))),
           ),
           campo("Preavviso minimo (minuti)", "anticipo", i.anticipo, { type: "number", min: 0, max: 1440, step: 15 }, "Quanto prima del pasto si può prenotare online."),
-          campo("Prenotabile fino a (giorni)", "giorni_prenotabili", i.giorni_prenotabili, { type: "number", min: 1, max: 180 }),
+          campo("Prenotabile fino a (giorni)", "giorni_prenotabili", i.giorni_prenotabili, { type: "number", min: 1, max: 365 }, "183 giorni sono circa sei mesi."),
           campo("Persone massime online", "max_persone_online", i.max_persone_online, { type: "number", min: 1, max: 30 }, "Gruppi più grandi devono telefonare."),
           h(
             "label",
@@ -147,28 +167,96 @@ export async function vistaImpostazioni(contenitore, sessione) {
         promozioni,
         h("button", { type: "button", class: "secondario", onclick: () => { promozioni.append(rigaPromo()); segna(); } }, "Aggiungi una promozione"),
       ),
-      sessione.foto ? sezioneFoto() : null,
+      sezioneMessaggi(),
+      sezioneImmagini(),
       errore,
       h("div", { class: "barra-salva" }, salva),
       ].filter(Boolean),
     );
   }
 
-  function sezioneFoto() {
-    const esito = h("p", { class: "legenda", role: "status" });
-    const file = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
-    file.addEventListener("change", async () => {
-      if (!file.files[0]) return;
-      esito.textContent = "Carico la foto.";
-      try {
-        await api("/api/admin/foto", { metodo: "PUT", corpo: file.files[0], grezzo: true });
-        esito.textContent = "Foto aggiornata.";
-      } catch (e) {
-        esito.textContent = e.message;
-      }
-      file.value = "";
-    });
-    return h("section", { class: "blocco" }, h("h2", {}, "Foto del locale"), h("label", {}, "Immagine JPG, PNG o WebP fino a 3 MB", file), esito);
+  function sezioneMessaggi() {
+    const c = conf.canali;
+    const statoCanale = (attivo, nome, aiuto) =>
+      h("li", {}, h("strong", {}, nome), attivo ? " parte da solo quando la prenotazione è confermata." : ` si invia con un clic dall'agenda. ${aiuto}`);
+    return h(
+      "section",
+      { class: "blocco" },
+      h("h2", {}, "Messaggio di conferma"),
+      h("p", { class: "legenda" }, "Il cliente lo riceve quando la prenotazione è confermata, sia in automatico sia quando la confermi tu dall'agenda."),
+      h(
+        "ul",
+        { class: "canali-stato" },
+        statoCanale(c.email, "Email", "Per l'invio automatico servono un account Resend e i secret RESEND_API_KEY ed EMAIL_MITTENTE."),
+        statoCanale(c.sms, "SMS", "Per l'invio automatico servono un account Twilio e i secret TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_NUMERO."),
+        statoCanale(false, "WhatsApp", "L'invio automatico richiede WhatsApp Business con modelli approvati da Meta."),
+      ),
+      h(
+        "label",
+        {},
+        "Testo del messaggio",
+        h("textarea", { name: "messaggio_conferma", rows: 4, maxlength: 600, value: conf.impostazioni.messaggio_conferma ?? "" }),
+        h("span", { class: "aiuto" }, "Puoi usare: {nome}, {ristorante}, {persone}, {data}, {ora}, {codice}, {link}, {telefono}, {indirizzo}. Lascia {link}: serve al cliente per vedere o annullare."),
+      ),
+    );
+  }
+
+  function sezioneImmagini() {
+    const blocco = (chiave, titolo, aiuto, maxKB, maxLato, femminile = false) => {
+      const anteprima = h("img", { class: `anteprima-${chiave}`, alt: titolo, hidden: true });
+      const esito = h("p", { class: "legenda", role: "status" });
+      const rimuovi = h("button", { type: "button", class: "secondario pericolo", hidden: true }, "Rimuovi");
+      const file = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", "aria-label": `Scegli ${titolo.toLowerCase()}` });
+      const mostra = () => {
+        anteprima.hidden = true;
+        anteprima.onload = () => {
+          anteprima.hidden = false;
+          rimuovi.hidden = false;
+        };
+        anteprima.onerror = () => {
+          rimuovi.hidden = true;
+        };
+        anteprima.src = `/api/media/${chiave}?v=${Date.now()}`;
+      };
+      file.addEventListener("change", async () => {
+        const scelto = file.files[0];
+        if (!scelto) return;
+        esito.textContent = "Preparo l'immagine.";
+        try {
+          const dati = await ridimensiona(scelto, maxLato, maxKB * 1024);
+          esito.textContent = "Carico l'immagine.";
+          await api(`/api/admin/media/${chiave}`, { metodo: "PUT", corpo: dati, grezzo: true });
+          esito.textContent = `${titolo} ${femminile ? "aggiornata" : "aggiornato"}. ${femminile ? "La" : "Lo"} vedi già nella pagina di prenotazione.`;
+          mostra();
+        } catch (e) {
+          esito.textContent = e.message;
+        }
+        file.value = "";
+      });
+      rimuovi.addEventListener("click", async () => {
+        try {
+          await api(`/api/admin/media/${chiave}`, { metodo: "DELETE" });
+          anteprima.hidden = true;
+          rimuovi.hidden = true;
+          esito.textContent = `${titolo} ${femminile ? "rimossa" : "rimosso"}.`;
+        } catch (e) {
+          esito.textContent = e.message;
+        }
+      });
+      mostra();
+      return h("div", { class: "immagine" }, h("h3", {}, titolo), h("p", { class: "legenda" }, aiuto), anteprima, h("div", { class: "azioni" }, file, rimuovi), esito);
+    };
+    return h(
+      "section",
+      { class: "blocco" },
+      h("h2", {}, "Logo e foto"),
+      h(
+        "div",
+        { class: "immagini" },
+        blocco("logo", "Logo", "Compare in cima alla pagina di prenotazione. Meglio un PNG con sfondo trasparente.", 500, 800),
+        blocco("foto", "Foto del locale", "Compare sotto il nome del ristorante. Le foto grandi vengono ridotte in automatico.", 1500, 1600, true),
+      ),
+    );
   }
 
   const giorniChiusi = h("p", { class: "legenda" });
@@ -190,6 +278,7 @@ export async function vistaImpostazioni(contenitore, sessione) {
         giorni_prenotabili: Number(f.get("giorni_prenotabili")),
         max_persone_online: Number(f.get("max_persone_online")),
         conferma_automatica: f.get("conferma_automatica") === "on",
+        messaggio_conferma: f.get("messaggio_conferma"),
       },
       orari: righe(orari, (r) => ({ giorno: Number(val(r, "giorno")), servizio: val(r, "servizio"), inizio: val(r, "inizio"), fine: val(r, "fine") })),
       chiusure: righe(chiusure, (r) => ({ data: val(r, "data"), motivo: val(r, "motivo") })),

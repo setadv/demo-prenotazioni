@@ -42,6 +42,18 @@ npm install
 npm test
 ```
 
-## Foto del locale
+## Logo e foto del locale
 
-R2 è facoltativo e all'inizio non è configurato. Dopo aver creato due bucket, aggiungi a `wrangler.jsonc` un binding `FOTO` per la produzione e uno per `previews`, ciascuno con il proprio bucket. Nelle impostazioni del pannello comparirà il caricamento della foto.
+Si caricano da Impostazioni nel pannello e sono salvati nel database D1: non serve un bucket R2. Le foto troppo grandi vengono ridotte nel browser prima del caricamento.
+
+## Messaggi di conferma
+
+Il cliente sceglie se ricevere la conferma via email, SMS o WhatsApp. Il messaggio parte quando la prenotazione diventa confermata, in automatico o dall'agenda, e una sola volta. Il testo si modifica in Impostazioni.
+
+- **Email automatica:** secret `RESEND_API_KEY` ed `EMAIL_MITTENTE` (per esempio `Osteria <prenotazioni@dominio-verificato.it>`). Il dominio del mittente va verificato su Resend.
+- **SMS automatico:** secret `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` e `TWILIO_NUMERO`.
+- **WhatsApp:** dall'agenda il gestore lo invia con un clic, con il testo già pronto. L'invio automatico richiede WhatsApp Business con modelli approvati da Meta.
+
+Senza secret, l'agenda segna la conferma come da inviare e propone i pulsanti WhatsApp, SMS ed email. Se il canale scelto fallisce si prova l'altro canale automatico; chi sceglie WhatsApp non riceve SMS a pagamento al suo posto.
+
+Il link personale del cliente deriva da `SESSION_SECRET`: se cambi questo secret, i link già inviati smettono di funzionare.

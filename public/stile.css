@@ -76,20 +76,39 @@ legend { padding: 0; margin-bottom: .75rem; font-size: 1.6rem; line-height: 1.2;
 }
 .scelta[aria-checked="true"] { color: var(--bianco); background: var(--bottiglia); border-color: var(--bottiglia); }
 
-.giorni { display: flex; gap: .4rem; overflow-x: auto; padding: 3px 3px .6rem; scroll-snap-type: x proximity; }
-.giorno {
-  flex: 0 0 4.1rem;
-  padding: .55rem .2rem;
+.calendario { max-width: 460px; padding: .75rem; background: var(--bianco); border: 1px solid var(--linea); border-radius: 8px; }
+.testa-calendario { display: grid; grid-template-columns: 2.6rem 1fr 2.6rem; gap: .5rem; align-items: center; margin-bottom: .6rem; }
+.mese-nav { height: 2.6rem; font-size: 1.4rem; line-height: 1; background: var(--celadon); border: 0; border-radius: 6px; }
+.mese-nav:disabled { color: #a9b8b1; background: transparent; cursor: not-allowed; }
+.mese-scelta {
+  padding: .45rem .6rem !important;
+  font: 400 1.15rem "Young Serif", Georgia, serif !important;
   text-align: center;
-  scroll-snap-align: start;
-  background: var(--bianco);
-  border: 1px solid var(--linea);
+  text-transform: capitalize;
+  border-color: var(--linea) !important;
+}
+.griglia-giorni { display: grid; grid-template-columns: repeat(7, 1fr); gap: .25rem; }
+.intestazione-giorno { padding: .2rem 0; font-size: .78rem; color: var(--grigio); text-align: center; }
+.giorno-cal {
+  aspect-ratio: 1;
+  min-height: 2.4rem;
+  font: 400 1.05rem "Young Serif", Georgia, serif;
+  background: var(--celadon);
+  border: 1px solid transparent;
   border-radius: 6px;
 }
-.giorno b { display: block; font: 400 1.5rem/1.15 "Young Serif", Georgia, serif; }
-.giorno small { display: block; font-size: .8rem; }
-.giorno[aria-pressed="true"] { color: var(--bianco); background: var(--bottiglia); border-color: var(--bottiglia); }
-.giorno:disabled { color: #8a9a93; background: transparent; border-style: dashed; cursor: not-allowed; }
+.giorno-cal:hover:not(:disabled) { border-color: var(--bottiglia); }
+.giorno-cal.oggi { border-color: var(--linea); }
+.giorno-cal[aria-pressed="true"] { color: var(--bianco); background: var(--bottiglia); border-color: var(--bottiglia); }
+.giorno-cal:disabled { color: #a9b8b1; background: transparent; cursor: not-allowed; }
+.giorno-cal.chiuso { text-decoration: line-through; }
+.data-scelta { margin: .6rem 0 0; font-weight: 600; }
+.data-scelta::first-letter { text-transform: uppercase; }
+.logo { display: block; max-width: 220px; max-height: 110px; margin-bottom: 1rem; object-fit: contain; object-position: left; }
+.canali { display: flex; flex-wrap: wrap; gap: .4rem 1.25rem; margin: 0; padding: 0; border: 0; }
+.canali legend { width: 100%; margin-bottom: .3rem; font: 500 .95rem "Instrument Sans", system-ui, sans-serif; }
+.canali .spunta { align-items: center; }
+.canali input { accent-color: var(--melograno); width: 1.1rem; height: 1.1rem; }
 
 .servizio { margin: 1rem 0 .4rem; color: var(--grigio); font-size: .9rem; font-weight: 600; }
 .servizio:first-child { margin-top: 0; }

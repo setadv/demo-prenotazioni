@@ -59,11 +59,11 @@
 .strumenti { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; margin-bottom: 1rem; }
 .strumenti input[type="search"] { max-width: 420px; }
 .scegli-giorno { display: flex; gap: .35rem; align-items: center; }
-.scegli-giorno input { width: auto; flex: none; }
+.scegli-giorno input[type="date"] { width: 10.5rem !important; flex: none; }
 .scegli-giorno .secondario { flex: none; }
 .scegli-giorno .secondario { min-width: 2.6rem; }
-.filtri { display: flex; gap: .3rem; }
-.filtro { padding: .45rem .8rem; background: var(--bianco); border: 1px solid var(--linea); border-radius: 999px; }
+.filtri { display: flex; flex-wrap: wrap; gap: .3rem; }
+.filtro { flex: none; white-space: nowrap; padding: .45rem .8rem; background: var(--bianco); border: 1px solid var(--linea); border-radius: 999px; }
 .filtro[aria-pressed="true"] { color: var(--bianco); background: var(--bottiglia); border-color: var(--bottiglia); }
 .riepilogo { margin: 0 0 1.25rem; font-size: 1.05rem; }
 .da-fare { color: var(--melograno); }
@@ -131,8 +131,6 @@ label.piccola, legend.piccola { font-size: .85rem; color: var(--grigio); font-we
 .pulsanti-dialogo { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: 1.25rem; }
 .pulsanti-dialogo .azione { width: auto; }
 
-.cursore-ora { display: flex; align-items: center; gap: .6rem; font-weight: 500; }
-.cursore-ora input { width: min(320px, 50vw); accent-color: var(--melograno); }
 .ora-scelta { min-width: 3.4rem; font: 400 1.4rem "Young Serif", Georgia, serif; }
 .schede { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .75rem; border-bottom: 1px solid var(--linea); }
 .scheda-sala {
@@ -317,6 +315,96 @@ label.piccola, legend.piccola { font-size: .85rem; color: var(--grigio); font-we
   background: linear-gradient(to top, var(--celadon) 70%, transparent);
 }
 
+.strumenti > * { flex: none; }
+.strumenti-agenda { row-gap: .6rem; }
+.segmenti { display: inline-flex; padding: 3px; background: var(--bianco); border: 1px solid var(--linea); border-radius: 8px; }
+.segmenti button { padding: .4rem .85rem; background: none; border: 0; border-radius: 6px; white-space: nowrap; }
+.segmenti button[aria-pressed="true"] { color: var(--bianco); background: var(--bottiglia); }
+
+.messaggi { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; margin-top: .45rem; font-size: .88rem; }
+.messaggi .legenda { margin: 0; }
+.invio { padding: .1rem .5rem; border-radius: 3px; }
+.invio.ok { background: #dcefe5; color: #1d5c42; }
+.invio.attesa { background: var(--ocra-chiaro); color: #6b4a00; }
+.invio.errore { background: var(--rosa-chiaro); color: var(--melograno-scuro); }
+.invia-link { padding: .2rem .6rem; color: var(--bottiglia); text-decoration: none; border: 1px solid var(--linea); border-radius: 999px; }
+.invia-link:hover { border-color: var(--bottiglia); }
+.invia-link.preferito { color: var(--bianco); background: var(--bottiglia); border-color: var(--bottiglia); }
+
+.settimana { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .4rem; }
+.colonna-giorno { display: flex; flex-direction: column; gap: .3rem; min-width: 0; padding: .4rem; background: var(--bianco); border-radius: 6px; }
+.colonna-giorno.oggi { box-shadow: inset 0 3px 0 var(--melograno); }
+.colonna-giorno.chiuso { background: transparent; border: 1px dashed var(--linea); }
+.testa-giorno { display: grid; gap: 0; padding: .3rem .35rem; text-align: left; background: none; border: 0; border-radius: 4px; }
+.testa-giorno:hover { background: var(--celadon); }
+.nome-giorno { font: 400 1.05rem "Young Serif", Georgia, serif; text-transform: capitalize; }
+.testa-giorno .legenda { margin: 0; font-size: .8rem; }
+.voci { display: grid; gap: .25rem; }
+.voce {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: .35rem;
+  align-items: baseline;
+  padding: .3rem .4rem;
+  font-size: .82rem;
+  text-align: left;
+  background: var(--celadon);
+  border: 0;
+  border-left: 3px solid var(--ocra);
+  border-radius: 3px;
+}
+.voce.stato-confermata { border-left-color: var(--melograno); }
+.voce.stato-arrivata { border-left-color: var(--verde); }
+.voce.stato-annullata, .voce.stato-no_show { border-left-color: var(--linea); color: var(--grigio); text-decoration: line-through; }
+.voce-ora { font-weight: 600; }
+.voce-nome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.mese { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; }
+.intestazione-mese { padding: .2rem; font-size: .82rem; color: var(--grigio); text-align: center; }
+.cella-mese {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .1rem;
+  min-height: 5.6rem;
+  padding: .4rem .5rem;
+  text-align: left;
+  background: var(--bianco);
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.cella-mese:hover { border-color: var(--bottiglia); }
+.cella-mese.fuori { opacity: .45; }
+.cella-mese.oggi { border-color: var(--melograno); }
+.cella-mese.chiuso { background: transparent; border: 1px dashed var(--linea); }
+.numero-giorno { font: 400 1.15rem "Young Serif", Georgia, serif; }
+.conteggio-mese { font-weight: 600; font-size: .88rem; }
+.cella-mese .legenda { margin: 0; font-size: .78rem; }
+.badge-mese { margin-top: auto; padding: 0 .35rem; font-size: .72rem; color: #6b4a00; background: var(--ocra-chiaro); border-radius: 3px; }
+
+.barra-ora {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin: 0 0 .9rem;
+  padding: .55rem .75rem;
+  background: var(--bianco);
+  border-radius: 8px;
+}
+.barra-ora input[type="range"] { flex: 1; min-width: 0; accent-color: var(--melograno); }
+.barra-ora .secondario { flex: none; padding: .35rem .7rem; }
+.etichetta-ora { flex: none; font-weight: 600; }
+
+.canali-stato { margin: 0 0 1rem; padding-left: 1.1rem; }
+.canali-stato li { margin-bottom: .3rem; }
+.immagini { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+.immagine { padding: .9rem; background: var(--celadon); border-radius: 6px; }
+.immagine h3 { margin: 0 0 .2rem; font-size: 1.15rem; }
+.immagine .legenda { margin: 0 0 .6rem; }
+.immagine img { display: block; max-width: 100%; max-height: 140px; margin-bottom: .6rem; object-fit: contain; background: var(--bianco); border-radius: 4px; }
+.immagine .azioni { align-items: center; }
+.immagine input[type="file"] { max-width: 100%; }
+
 @media (max-width: 980px) {
   .layout-sala { grid-template-columns: 1fr; }
   .pannello-laterale { position: static; max-height: none; }
@@ -331,12 +419,20 @@ label.piccola, legend.piccola { font-size: .85rem; color: var(--grigio); font-we
   .gestione-riga { grid-column: 1 / -1; }
   .origini li { grid-template-columns: 1fr; gap: .25rem; }
   .dettaglio-giorni { overflow-x: auto; }
-  .cursore-ora input { width: 100%; }
-  .cursore-ora { width: 100%; }
   .nota-cliente { flex-direction: column; align-items: stretch; }
+  .settimana { grid-template-columns: 1fr; }
+  .colonna-giorno { flex-direction: row; flex-wrap: wrap; }
+  .colonna-giorno .testa-giorno { width: 100%; }
+  .colonna-giorno .voci { width: 100%; }
+  .cella-mese { min-height: 3.6rem; padding: .3rem; }
+  .cella-mese .legenda, .badge-mese { display: none; }
+  .conteggio-mese { font-size: .72rem; }
+  .barra-ora { flex-wrap: wrap; }
+  .barra-ora input[type="range"] { order: 5; flex-basis: 100%; }
   .sedia { width: 8px; height: 8px; border-width: 1px; }
   .tavolo.stato-libero .dettaglio-tavolo, .tavolo.stato-adatto .dettaglio-tavolo, .tavolo.stato-solo-sala .dettaglio-tavolo { display: none; }
-  .scegli-giorno input { min-width: 0; flex: 1; }
+  .scegli-giorno input[type="date"] { width: auto !important; min-width: 0; flex: 1; }
+  .scegli-giorno { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

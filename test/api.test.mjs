@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,36 @@ const stato = mkdtempSync(join(tmpdir(), "demo-pren-"));
 const wrangler = "node_modules/.bin/wrangler";
 let server;
 let cookie = "";
+let posta;
+const inviati = [];
+const PORTA_POSTA = 8798;
+
+/** Server finto che riceve le chiamate a Resend e Twilio durante i test. */
+function avviaPosta() {
+  posta = createServer((req, res) => {
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const voce = { percorso: req.url, auth: req.headers.authorization, corpo };
+      if (req.url.startsWith("/email")) voce.json = JSON.parse(corpo);
+      else voce.form = Object.fromEntries(new URLSearchParams(corpo));
+      inviati.push(voce);
+      const errore = voce.json?.to?.[0] === "errore@esempio.it";
+      res.writeHead(errore ? 500 : 200, { "content-type": "application/json" });
+      res.end(errore ? '{"message":"casella inesistente"}' : '{"id":"finto"}');
+    });
+  });
+  return new Promise((ok) => posta.listen(PORTA_POSTA, "127.0.0.1", ok));
+}
+
+async function attendiInvio(filtro) {
+  for (let i = 0; i < 40; i += 1) {
+    const trovato = inviati.find(filtro);
+    if (trovato) return trovato;
+    await new Promise((f) => setTimeout(f, 150));
+  }
+  return null;
+}
 
 /** Prossimo giorno con il giorno della settimana indicato, ad almeno `minimo` giorni da oggi. */
 function prossimo(giorno, minimo = 2) {
@@ -48,6 +79,7 @@ const prenota = (dati, ip = "10.0.0.1") =>
   });
 
 before(async () => {
+  await avviaPosta();
   execFileSync(wrangler, ["d1", "migrations", "apply", "DB", "--local", "--config", "wrangler.test.jsonc", "--persist-to", stato], {
     env: { ...process.env, CI: "1" },
     stdio: "pipe",
@@ -57,6 +89,10 @@ before(async () => {
     [
       "dev", "--config", "wrangler.test.jsonc", "--port", String(PORTA), "--ip", "127.0.0.1", "--persist-to", stato,
       "--var", `ADMIN_PASSWORD:${PASSWORD}`, "--var", "SESSION_SECRET:segreto-di-test-lungo-trentadue-caratteri",
+      "--var", "RESEND_API_KEY:re_finta", "--var", "EMAIL_MITTENTE:Prenotazioni <prenotazioni@esempio.it>",
+      "--var", `RESEND_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/email`,
+      "--var", "TWILIO_ACCOUNT_SID:ACfinto", "--var", "TWILIO_AUTH_TOKEN:token-finto", "--var", "TWILIO_NUMERO:+15550001111",
+      "--var", `TWILIO_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/sms`,
     ],
     { stdio: "ignore", env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" } },
   );
@@ -71,6 +107,7 @@ before(async () => {
 
 after(() => {
   server?.kill("SIGTERM");
+  posta?.close();
   rmSync(stato, { recursive: true, force: true });
 });
 
@@ -324,12 +361,90 @@ test("le statistiche coprono il periodo richiesto", async () => {
   assert.equal((await admin("/api/admin/statistiche?giorni=2")).status, 400);
 });
 
-test("la foto accetta solo immagini vere", async () => {
-  assert.equal((await chiama("/api/foto")).status, 404);
+test("logo e foto si caricano nel database e compaiono nella scheda", async () => {
+  assert.equal((await chiama("/api/media/logo")).status, 404);
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
-  assert.equal((await admin("/api/admin/foto", { method: "PUT", body: Buffer.from("<script>"), grezzo: true })).status, 415);
-  assert.equal((await admin("/api/admin/foto", { method: "PUT", body: png, grezzo: true })).status, 200);
-  assert.equal((await chiama("/api/foto")).headers.get("content-type"), "image/png");
+  assert.equal((await admin("/api/admin/media/logo", { method: "PUT", body: Buffer.from("<svg onload=x>"), grezzo: true })).status, 415);
+  assert.equal((await admin("/api/admin/media/logo", { method: "PUT", body: Buffer.alloc(600 * 1024, 1), grezzo: true })).status, 413);
+  assert.equal((await chiama("/api/admin/media/logo", { method: "PUT", body: png, grezzo: true })).status, 401);
+  assert.equal((await admin("/api/admin/media/logo", { method: "PUT", body: png, grezzo: true })).status, 200);
+  const letto = await chiama("/api/media/logo");
+  assert.equal(letto.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await letto.arrayBuffer()), png);
+  assert.ok((await (await chiama("/api/ristorante")).json()).logo);
+  assert.equal((await admin("/api/admin/media/logo", { method: "DELETE" })).status, 200);
+  assert.equal((await chiama("/api/media/logo")).status, 404);
+});
+
+test("il periodo restituisce le prenotazioni di settimana e mese", async () => {
+  const r = await (await admin(`/api/admin/periodo?da=${sposta(MARTEDI, -1)}&a=${sposta(MARTEDI, 5)}`)).json();
+  assert.ok(r.prenotazioni.some((p) => p.data === MARTEDI && p.nome === "Gruppo Grande"));
+  assert.ok(r.giorni_aperti.includes(2));
+  assert.equal((await admin(`/api/admin/periodo?da=${MARTEDI}&a=${sposta(MARTEDI, 60)}`)).status, 400);
+});
+
+test("la conferma del gestore invia l'email con il link personale", async () => {
+  const conf = await (await admin("/api/admin/configurazione")).json();
+  conf.impostazioni.conferma_automatica = false;
+  assert.equal((await admin("/api/admin/configurazione", { method: "PUT", body: conf })).status, 200);
+  const data = sposta(MARTEDI, 35);
+  const pren = await (await prenota({ data, ora: "20:00", nome: "Laura Verdi", telefono: "333 8888888", email: "laura@esempio.it", canale: "email" }, "10.7.0.1")).json();
+  assert.equal(pren.stato, "in_attesa");
+  assert.equal(inviati.some((v) => v.json?.to?.[0] === "laura@esempio.it"), false);
+  assert.equal((await admin(`/api/admin/prenotazioni/${pren.id}`, { method: "PATCH", body: { stato: "confermata" } })).status, 200);
+  const email = await attendiInvio((v) => v.json?.to?.[0] === "laura@esempio.it");
+  assert.ok(email, "email non inviata");
+  assert.equal(email.auth, "Bearer re_finta");
+  assert.match(email.json.text, new RegExp(pren.codice));
+  const link = email.json.text.match(/\/prenotazione#id=([0-9a-f-]+)&t=([\w-]+)/);
+  assert.equal(link[1], pren.id);
+  const letta = await chiama(`/api/prenotazioni/${pren.id}`, { headers: { "x-prenotazione-token": link[2] } });
+  assert.equal(letta.status, 200);
+
+  const agenda = await (await admin(`/api/admin/agenda?data=${data}`)).json();
+  const riga = agenda.prenotazioni.find((p) => p.id === pren.id);
+  assert.equal(riga.notifica.esito, "inviata");
+  assert.equal(riga.notifica.canale, "email");
+  assert.match(riga.messaggio, /Laura/);
+
+  const prima = inviati.length;
+  await admin(`/api/admin/prenotazioni/${pren.id}`, { method: "PATCH", body: { stato: "annullata" } });
+  await admin(`/api/admin/prenotazioni/${pren.id}`, { method: "PATCH", body: { stato: "confermata" } });
+  await new Promise((f) => setTimeout(f, 800));
+  assert.equal(inviati.length, prima, "la conferma non deve partire due volte");
+});
+
+test("se l'email fallisce la conferma parte via SMS, WhatsApp resta da inviare a mano", async () => {
+  const data = sposta(MARTEDI, 42);
+  const conErrore = await (await prenota({ data, ora: "20:00", nome: "Paolo Neri", telefono: "333 9990001", email: "errore@esempio.it", canale: "email" }, "10.8.0.1")).json();
+  await admin(`/api/admin/prenotazioni/${conErrore.id}`, { method: "PATCH", body: { stato: "confermata" } });
+  const sms = await attendiInvio((v) => v.form?.To === "+393339990001");
+  assert.ok(sms, "SMS di riserva non inviato");
+  assert.equal(sms.percorso, "/sms/2010-04-01/Accounts/ACfinto/Messages.json");
+  assert.equal(sms.form.From, "+15550001111");
+
+  const wa = await (await prenota({ data, ora: "21:00", nome: "Giulia Blu", telefono: "333 9990002", email: "giulia@esempio.it", canale: "whatsapp" }, "10.8.0.1")).json();
+  await admin(`/api/admin/prenotazioni/${wa.id}`, { method: "PATCH", body: { stato: "confermata" } });
+  await new Promise((f) => setTimeout(f, 800));
+  assert.equal(inviati.some((v) => v.form?.To === "+393339990002" || v.json?.to?.[0] === "giulia@esempio.it"), false);
+  let agenda = await (await admin(`/api/admin/agenda?data=${data}`)).json();
+  assert.equal(agenda.prenotazioni.find((p) => p.id === wa.id).notifica.esito, "da_inviare");
+  assert.equal(agenda.prenotazioni.find((p) => p.id === conErrore.id).notifica.canale, "sms");
+
+  assert.equal((await admin(`/api/admin/prenotazioni/${wa.id}/notifica`, { method: "POST", body: { canale: "whatsapp" } })).status, 200);
+  assert.equal((await admin(`/api/admin/prenotazioni/${wa.id}/notifica`, { method: "POST", body: { canale: "piccione" } })).status, 400);
+  agenda = await (await admin(`/api/admin/agenda?data=${data}`)).json();
+  assert.equal(agenda.prenotazioni.find((p) => p.id === wa.id).notifica.esito, "manuale");
+});
+
+test("con la conferma automatica il cliente riceve subito il messaggio", async () => {
+  const sms = await attendiInvio((v) => v.form?.To === "+393336666666");
+  assert.ok(sms, "la prenotazione confermata in automatico non ha inviato l'SMS");
+  assert.match(sms.form.Body, /confermata/);
+});
+
+test("un canale email senza indirizzo viene rifiutato", async () => {
+  assert.equal((await prenota({ data: sposta(MARTEDI, 49), canale: "email", email: "" }, "10.9.0.1")).status, 400);
 });
 
 test("dopo il logout il cookie viene cancellato", async () => {
