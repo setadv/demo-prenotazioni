@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,8 +13,18 @@ const wrangler = "node_modules/.bin/wrangler";
 let server;
 let cookie = "";
 
-const domani = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-const giorno = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+/** Prossimo giorno con il giorno della settimana indicato, ad almeno `minimo` giorni da oggi. */
+function prossimo(giorno, minimo = 2) {
+  const d = new Date();
+  d.setUTCHours(12, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + minimo);
+  while (d.getUTCDay() !== giorno) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+const sposta = (data, giorni) => new Date(Date.parse(`${data}T12:00:00Z`) + giorni * 86400000).toISOString().slice(0, 10);
+
+const MARTEDI = prossimo(2);
+const LUNEDI = prossimo(1);
 
 function chiama(percorso, { method = "GET", body, headers = {}, grezzo = false } = {}) {
   return fetch(BASE + percorso, {
@@ -28,12 +38,13 @@ function chiama(percorso, { method = "GET", body, headers = {}, grezzo = false }
     body: grezzo ? body : body ? JSON.stringify(body) : undefined,
   });
 }
+const admin = (percorso, opzioni = {}) => chiama(percorso, { ...opzioni, headers: { cookie, ...(opzioni.headers ?? {}) } });
 
 const prenota = (dati, ip = "10.0.0.1") =>
   chiama("/api/prenotazioni", {
     method: "POST",
     headers: { "cf-connecting-ip": ip },
-    body: { data: domani, ora: "20:30", persone: 2, nome: "Prova Test", contatto: "333 0000000", ...dati },
+    body: { data: MARTEDI, ora: "20:00", persone: 2, nome: "Prova Test", telefono: "333 0000001", privacy: true, ...dati },
   });
 
 before(async () => {
@@ -41,15 +52,17 @@ before(async () => {
     env: { ...process.env, CI: "1" },
     stdio: "pipe",
   });
-  server = spawn(wrangler, [
-    "dev", "--config", "wrangler.test.jsonc", "--port", String(PORTA), "--ip", "127.0.0.1",
-    "--persist-to", stato,
-    "--var", `ADMIN_PASSWORD:${PASSWORD}`, "--var", "SESSION_SECRET:segreto-di-test-lungo-trentadue-caratteri",
-  ], { stdio: "ignore", env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" } });
+  server = spawn(
+    wrangler,
+    [
+      "dev", "--config", "wrangler.test.jsonc", "--port", String(PORTA), "--ip", "127.0.0.1", "--persist-to", stato,
+      "--var", `ADMIN_PASSWORD:${PASSWORD}`, "--var", "SESSION_SECRET:segreto-di-test-lungo-trentadue-caratteri",
+    ],
+    { stdio: "ignore", env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" } },
+  );
   for (let i = 0; i < 80; i += 1) {
     try {
-      const r = await fetch(`${BASE}/api/disponibilita?data=${domani}`);
-      if (r.ok) return;
+      if ((await fetch(`${BASE}/api/ristorante`)).ok) return;
     } catch {}
     await new Promise((f) => setTimeout(f, 500));
   }
@@ -61,133 +74,265 @@ after(() => {
   rmSync(stato, { recursive: true, force: true });
 });
 
-test("la pagina pubblica e l'area riservata si aprono con gli header di sicurezza", async () => {
-  const home = await chiama("/");
-  assert.equal(home.status, 200);
-  assert.match(await home.text(), /Osteria del Melograno/);
-  assert.equal(home.headers.get("x-robots-tag"), "noindex");
-  assert.match(home.headers.get("content-security-policy"), /default-src 'self'/);
-  const admin = await chiama("/admin");
-  assert.equal(admin.status, 200);
-  assert.match(await admin.text(), /Area riservata/);
+test("le pagine si aprono con gli header di sicurezza", async () => {
+  for (const [percorso, testo] of [["/", "Prenota un tavolo"], ["/admin", "Area riservata"], ["/prenotazione", "La tua prenotazione"]]) {
+    const r = await chiama(percorso);
+    assert.equal(r.status, 200, percorso);
+    assert.match(await r.text(), new RegExp(testo));
+    assert.equal(r.headers.get("x-robots-tag"), "noindex");
+    assert.match(r.headers.get("content-security-policy"), /default-src 'self'/);
+  }
 });
 
-test("una prenotazione valida riduce i posti disponibili", async () => {
-  const r = await prenota({ ora: "12:30", persone: 4 });
+test("la scheda del ristorante espone orari e regole", async () => {
+  const info = await (await chiama("/api/ristorante")).json();
+  assert.equal(info.nome, "Osteria del Melograno");
+  assert.equal(info.max_persone_online, 8);
+  assert.ok(info.orari.some((o) => o.giorno === 2));
+  assert.ok(!info.orari.some((o) => o.giorno === 1));
+});
+
+test("la disponibilità segue orari, chiusura settimanale e promozioni", async () => {
+  const d = await (await chiama(`/api/disponibilita?data=${MARTEDI}&persone=2`)).json();
+  assert.equal(d.chiuso, false);
+  assert.equal(d.slot[0].ora, "12:30");
+  assert.equal(d.slot.find((s) => s.ora === "19:30").sconto, 20);
+  assert.equal(d.slot.find((s) => s.ora === "21:00").sconto, 0);
+  assert.ok(d.slot.every((s) => s.disponibile));
+  const lun = await (await chiama(`/api/disponibilita?data=${LUNEDI}&persone=2`)).json();
+  assert.equal(lun.chiuso, true);
+  assert.equal((await chiama(`/api/disponibilita?data=${MARTEDI}&persone=9`)).status, 400);
+});
+
+test("una prenotazione occupa un tavolo per la durata del pasto", async () => {
+  const r = await prenota({ persone: 8, ora: "20:00", nome: "Gruppo Grande", telefono: "333 1111111" });
   assert.equal(r.status, 201);
-  const { fasce } = await (await chiama(`/api/disponibilita?data=${domani}`)).json();
-  const fascia = fasce.find((f) => f.ora === "12:30");
-  assert.equal(fascia.occupati, 4);
-  assert.equal(fascia.liberi, 16);
+  const pren = await r.json();
+  assert.match(pren.codice, /^[A-Z2-9]{6}$/);
+  assert.equal(pren.stato, "in_attesa");
+
+  const d = await (await chiama(`/api/disponibilita?data=${MARTEDI}&persone=8`)).json();
+  const slot = (ora) => d.slot.find((s) => s.ora === ora).disponibile;
+  assert.equal(slot("19:30"), false);
+  assert.equal(slot("21:15"), false);
+  assert.equal(slot("21:30"), true);
+  assert.equal((await prenota({ persone: 8, ora: "20:30" })).status, 409);
+});
+
+test("prenotazioni simultanee non prendono lo stesso tavolo", async () => {
+  const esiti = await Promise.all(
+    Array.from({ length: 6 }, (_, i) => prenota({ persone: 8, ora: "12:30", telefono: `333 22200${i}` }, `10.1.0.${i}`)),
+  );
+  assert.equal(esiti.filter((r) => r.status === 201).length, 1);
+  assert.equal(esiti.filter((r) => r.status === 409).length, 5);
 });
 
 test("i dati non validi vengono rifiutati", async () => {
-  assert.equal((await prenota({ persone: 13 }, "10.0.0.2")).status, 400);
-  assert.equal((await prenota({ nome: "A" }, "10.0.0.2")).status, 400);
-  assert.equal((await prenota({ data: "2020-01-01" }, "10.0.0.2")).status, 400);
-  assert.equal((await prenota({ data: "2026-02-31" }, "10.0.0.2")).status, 400);
-  assert.equal((await prenota({ data: giorno(61) }, "10.0.0.2")).status, 400);
-  assert.equal((await prenota({ ora: "11:00" }, "10.0.0.2")).status, 409);
+  const ip = "10.0.0.2";
+  assert.equal((await prenota({ persone: 9 }, ip)).status, 400);
+  assert.equal((await prenota({ privacy: false }, ip)).status, 400);
+  assert.equal((await prenota({ telefono: "abc" }, ip)).status, 400);
+  assert.equal((await prenota({ email: "non-una-email" }, ip)).status, 400);
+  assert.equal((await prenota({ nome: "A" }, ip)).status, 400);
+  assert.equal((await prenota({ data: LUNEDI }, ip)).status, 409);
+  assert.equal((await prenota({ ora: "20:07" }, ip)).status, 409);
+  assert.equal((await prenota({ data: "2020-01-01" }, ip)).status, 409);
+  assert.equal((await prenota({ data: "2026-02-31" }, ip)).status, 400);
 });
 
-test("prenotazioni simultanee non superano i coperti", async () => {
-  const data = giorno(2);
-  const esiti = await Promise.all(
-    Array.from({ length: 8 }, (_, i) => prenota({ data, ora: "19:30", persone: 6 }, `10.1.0.${i}`)),
-  );
-  const riuscite = esiti.filter((r) => r.status === 201).length;
-  assert.equal(riuscite, 3);
-  assert.equal(esiti.filter((r) => r.status === 409).length, 5);
-  const { fasce } = await (await chiama(`/api/disponibilita?data=${data}`)).json();
-  assert.equal(fasce.find((f) => f.ora === "19:30").occupati, 18);
+test("il cliente vede e annulla la sua prenotazione solo con il link", async () => {
+  const pren = await (await prenota({ ora: "13:00", nome: "Anna Bianchi", telefono: "333 3333333", note: "Seggiolone" }, "10.0.0.4")).json();
+  const conToken = (t, metodo = "GET", suffisso = "") =>
+    chiama(`/api/prenotazioni/${pren.id}${suffisso}`, { method: metodo, headers: { "x-prenotazione-token": t } });
+
+  assert.equal((await conToken("token-sbagliato")).status, 404);
+  const letta = await (await conToken(pren.token)).json();
+  assert.equal(letta.nome, "Anna Bianchi");
+  assert.equal(letta.sconto, 10);
+  assert.equal(letta.annullabile, true);
+
+  assert.equal((await conToken("token-sbagliato", "POST", "/annulla")).status, 404);
+  assert.equal((await conToken(pren.token, "POST", "/annulla")).status, 200);
+  assert.equal((await (await conToken(pren.token)).json()).stato, "annullata");
+  assert.equal((await conToken(pren.token, "POST", "/annulla")).status, 409);
 });
 
-test("una richiesta da un altro sito viene bloccata", async () => {
-  const r = await chiama("/api/prenotazioni", {
-    method: "POST",
-    headers: { origin: "https://altro-sito.example" },
-    body: {},
-  });
+test("il campo esca e le richieste da altri siti non salvano nulla", async () => {
+  const data = sposta(MARTEDI, 7);
+  assert.equal((await prenota({ data, persone: 8, sito: "spam" }, "10.0.0.5")).status, 201);
+  const d = await (await chiama(`/api/disponibilita?data=${data}&persone=8`)).json();
+  assert.ok(d.slot.find((s) => s.ora === "20:00").disponibile);
+  const r = await chiama("/api/prenotazioni", { method: "POST", headers: { origin: "https://altro.example" }, body: {} });
   assert.equal(r.status, 403);
 });
 
-test("il campo esca non salva nulla", async () => {
-  const data = giorno(5);
-  const r = await prenota({ data, sito: "spam" }, "10.0.0.3");
-  assert.equal(r.status, 201);
-  const { fasce } = await (await chiama(`/api/disponibilita?data=${data}`)).json();
-  assert.equal(fasce.find((f) => f.ora === "20:30").occupati, 0);
-});
-
 test("dopo 10 prenotazioni in un'ora dallo stesso indirizzo scatta il limite", async () => {
-  const data = giorno(10);
+  const data = sposta(MARTEDI, 14);
+  const ore = ["12:30", "14:00", "19:30", "21:00", "22:00"];
   for (let i = 0; i < 10; i += 1) {
-    assert.equal((await prenota({ data, persone: 1 }, "10.2.0.1")).status, 201);
+    assert.equal((await prenota({ data, ora: ore[i % 5], persone: 1, telefono: `333 44400${i}` }, "10.2.0.1")).status, 201);
   }
-  assert.equal((await prenota({ data, persone: 1 }, "10.2.0.1")).status, 429);
+  assert.equal((await prenota({ data, ora: "21:00", persone: 1 }, "10.2.0.1")).status, 429);
 });
 
-test("l'area riservata è bloccata senza login o con cookie falso", async () => {
-  assert.equal((await chiama(`/api/admin/prenotazioni?data=${domani}`)).status, 401);
-  const falso = await chiama(`/api/admin/prenotazioni?data=${domani}`, {
-    headers: { cookie: `__Host-sessione=${Date.now() + 999999}.firma-falsa` },
-  });
-  assert.equal(falso.status, 401);
-});
-
-test("cinque password errate bloccano i tentativi", async () => {
-  const ip = "10.3.0.1";
+test("l'area riservata richiede il login e blocca i tentativi ripetuti", async () => {
+  assert.equal((await chiama(`/api/admin/agenda?data=${MARTEDI}`)).status, 401);
+  assert.equal(
+    (await chiama(`/api/admin/agenda?data=${MARTEDI}`, { headers: { cookie: `__Host-sessione=${Date.now() + 99999}.falsa` } })).status,
+    401,
+  );
   for (let i = 0; i < 5; i += 1) {
-    const r = await chiama("/api/admin/login", { method: "POST", headers: { "cf-connecting-ip": ip }, body: { password: "no" } });
-    assert.equal(r.status, 401);
+    assert.equal((await chiama("/api/admin/login", { method: "POST", headers: { "cf-connecting-ip": "10.3.0.1" }, body: { password: "no" } })).status, 401);
   }
-  const r = await chiama("/api/admin/login", { method: "POST", headers: { "cf-connecting-ip": ip }, body: { password: PASSWORD } });
-  assert.equal(r.status, 429);
-});
+  assert.equal((await chiama("/api/admin/login", { method: "POST", headers: { "cf-connecting-ip": "10.3.0.1" }, body: { password: PASSWORD } })).status, 429);
 
-test("il login crea una sessione protetta e mostra le prenotazioni", async () => {
   const r = await chiama("/api/admin/login", { method: "POST", headers: { "cf-connecting-ip": "10.3.0.2" }, body: { password: PASSWORD } });
   assert.equal(r.status, 200);
-  const intestazione = r.headers.get("set-cookie");
-  assert.match(intestazione, /__Host-sessione=/);
-  assert.match(intestazione, /HttpOnly/);
-  assert.match(intestazione, /Secure/);
-  assert.match(intestazione, /SameSite=Strict/);
-  cookie = intestazione.split(";")[0];
-  const elenco = await chiama(`/api/admin/prenotazioni?data=${domani}`, { headers: { cookie } });
-  assert.equal(elenco.status, 200);
-  assert.equal((await elenco.json()).prenotazioni.length, 1);
+  assert.match(r.headers.get("set-cookie"), /HttpOnly; SameSite=Strict/);
+  cookie = r.headers.get("set-cookie").split(";")[0];
 });
 
-test("conferma, annullamento e riattivazione rispettano i coperti", async () => {
-  const data = giorno(3);
-  const prima = await (await prenota({ data, ora: "13:30", persone: 12 }, "10.4.0.1")).json();
-  await prenota({ data, ora: "13:30", persone: 8 }, "10.4.0.1");
-  const patch = (id, stato) =>
-    chiama(`/api/admin/prenotazioni/${id}`, { method: "PATCH", headers: { cookie }, body: { stato } });
-
-  assert.equal((await patch(prima.id, "confermata")).status, 200);
-  assert.equal((await patch(prima.id, "annullata")).status, 200);
-  assert.equal((await prenota({ data, ora: "13:30", persone: 6 }, "10.4.0.1")).status, 201);
-  assert.equal((await patch(prima.id, "confermata")).status, 409);
-  assert.equal((await patch(prima.id, "sbagliato")).status, 400);
-  assert.equal((await patch("00000000-0000-4000-8000-000000000000", "confermata")).status, 404);
+test("l'agenda mostra prenotazioni, tavoli e storico del cliente", async () => {
+  const a = await (await admin(`/api/admin/agenda?data=${MARTEDI}`)).json();
+  const gruppo = a.prenotazioni.find((p) => p.nome === "Gruppo Grande");
+  assert.equal(gruppo.tavolo, "D4");
+  assert.ok(a.tavoli.length >= 12);
+  assert.equal(a.sale.length, 2);
+  assert.equal(a.prenotazioni.some((p) => "token_hash" in p), false);
 });
 
-test("la foto accetta solo immagini vere e appare sulla pagina pubblica", async () => {
+test("il gestore aggiunge prenotazioni al telefono e clienti senza prenotazione", async () => {
+  const tel = await admin("/api/admin/prenotazioni", {
+    method: "POST",
+    body: { data: MARTEDI, ora: "20:15", persone: 10, nome: "Cena Aziendale", telefono: "333 5555555", origine: "telefono" },
+  });
+  assert.equal(tel.status, 201);
+  assert.equal((await tel.json()).tavolo_id, "t7");
+
+  const pieno = await admin("/api/admin/prenotazioni", {
+    method: "POST",
+    body: { data: MARTEDI, ora: "20:15", persone: 10, nome: "Altro Gruppo", origine: "telefono" },
+  });
+  assert.equal(pieno.status, 409);
+  const forzata = await admin("/api/admin/prenotazioni", {
+    method: "POST",
+    body: { data: MARTEDI, ora: "20:15", persone: 10, nome: "Altro Gruppo", origine: "telefono", forza: true },
+  });
+  assert.equal(forzata.status, 201);
+  assert.equal((await forzata.json()).tavolo_id, null);
+
+  const walk = await admin("/api/admin/prenotazioni", {
+    method: "POST",
+    body: { data: MARTEDI, ora: "19:45", persone: 2, nome: "Coppia Al Banco", origine: "walk_in", tavolo_id: "t1" },
+  });
+  assert.equal(walk.status, 201);
+  const a = await (await admin(`/api/admin/agenda?data=${MARTEDI}`)).json();
+  assert.equal(a.prenotazioni.find((p) => p.nome === "Coppia Al Banco").stato, "arrivata");
+});
+
+test("spostamenti e cambi di stato rispettano i tavoli occupati", async () => {
+  const a = await (await admin(`/api/admin/agenda?data=${MARTEDI}`)).json();
+  const coppia = a.prenotazioni.find((p) => p.nome === "Coppia Al Banco");
+  const gruppo = a.prenotazioni.find((p) => p.nome === "Gruppo Grande");
+  const senza = a.prenotazioni.find((p) => p.nome === "Altro Gruppo");
+  const patch = (id, body) => admin(`/api/admin/prenotazioni/${id}`, { method: "PATCH", body });
+
+  assert.equal((await patch(senza.id, { tavolo_id: "d4" })).status, 409);
+  assert.equal((await patch(senza.id, { tavolo_id: "t5" })).status, 200);
+  assert.equal((await patch(gruppo.id, { stato: "confermata" })).status, 200);
+  assert.equal((await patch(gruppo.id, { stato: "annullata" })).status, 200);
+  assert.equal((await patch(senza.id, { tavolo_id: "d4" })).status, 200);
+  assert.equal((await patch(gruppo.id, { stato: "confermata" })).status, 409);
+  assert.equal((await patch(coppia.id, { stato: "inventato" })).status, 400);
+  assert.equal((await patch(coppia.id, { tavolo_id: "non-esiste" })).status, 404);
+  assert.equal((await patch("00000000-0000-4000-8000-000000000000", { stato: "confermata" })).status, 404);
+});
+
+test("la mappa dei tavoli si modifica e protegge le prenotazioni future", async () => {
+  const sala = await (await admin("/api/admin/sala")).json();
+  const doppio = structuredClone(sala);
+  doppio.tavoli[1].nome = doppio.tavoli[0].nome;
+  assert.equal((await admin("/api/admin/sala", { method: "PUT", body: doppio })).status, 400);
+
+  const senzaD4 = structuredClone(sala);
+  senzaD4.tavoli = senzaD4.tavoli.filter((t) => t.id !== "d4");
+  const rifiutato = await admin("/api/admin/sala", { method: "PUT", body: senzaD4 });
+  assert.equal(rifiutato.status, 409);
+  assert.match((await rifiutato.json()).errore, /D4/);
+
+  const nuova = structuredClone(sala);
+  nuova.tavoli.push({ id: "da-togliere", sala_id: "dehors", nome: "D9", posti_min: 1, posti_max: 2, forma: "tondo", x: 800, y: 80, larghezza: 100, altezza: 100, online: true });
+  assert.equal((await admin("/api/admin/sala", { method: "PUT", body: nuova })).status, 200);
+  nuova.tavoli = nuova.tavoli.filter((t) => t.id !== "da-togliere");
+  nuova.tavoli.push({ id: "nuovo-12", sala_id: "dehors", nome: "D5", posti_min: 6, posti_max: 12, forma: "rettangolo", x: 600, y: 330, larghezza: 300, altezza: 110, online: true });
+  nuova.tavoli.find((t) => t.id === "t1").x = 900;
+  const ok = await admin("/api/admin/sala", { method: "PUT", body: nuova });
+  assert.equal(ok.status, 200);
+  const salvata = await ok.json();
+  assert.equal(salvata.tavoli.some((t) => t.id === "da-togliere"), false);
+  assert.equal(salvata.tavoli.find((t) => t.id === "nuovo-12").nome, "D5");
+  assert.equal(salvata.tavoli.find((t) => t.id === "t1").x, 900);
+
+  const fuori = structuredClone(salvata);
+  fuori.tavoli.find((t) => t.id === "t1").x = 950;
+  assert.equal((await admin("/api/admin/sala", { method: "PUT", body: fuori })).status, 400);
+
+  const d = await (await chiama(`/api/disponibilita?data=${MARTEDI}&persone=8`)).json();
+  assert.equal(d.slot.find((s) => s.ora === "20:00").disponibile, true);
+});
+
+test("orari, chiusure e regole cambiano subito la disponibilità", async () => {
+  const conf = await (await admin("/api/admin/configurazione")).json();
+  conf.impostazioni.max_persone_online = 10;
+  conf.impostazioni.conferma_automatica = true;
+  conf.chiusure.push({ data: sposta(MARTEDI, 1), motivo: "Evento privato" });
+  conf.orari.push({ giorno: 1, servizio: "Cena", inizio: "19:30", fine: "21:00" });
+  conf.promozioni.push({ giorni: [1], ora_da: "19:30", ora_a: "21:00", sconto: 30, attiva: true });
+  const r = await admin("/api/admin/configurazione", { method: "PUT", body: conf });
+  assert.equal(r.status, 200);
+
+  const chiusa = await (await chiama(`/api/disponibilita?data=${sposta(MARTEDI, 1)}&persone=2`)).json();
+  assert.equal(chiusa.chiuso, true);
+  assert.equal(chiusa.motivo, "Evento privato");
+  const lun = await (await chiama(`/api/disponibilita?data=${LUNEDI}&persone=10`)).json();
+  assert.equal(lun.chiuso, false);
+  assert.equal(lun.slot[0].sconto, 30);
+  const pren = await (await prenota({ data: LUNEDI, ora: "19:30", persone: 10, telefono: "333 6666666" }, "10.5.0.1")).json();
+  assert.equal(pren.stato, "confermata");
+
+  const sbagliata = structuredClone(conf);
+  sbagliata.orari.push({ giorno: 3, servizio: "Rotto", inizio: "22:00", fine: "20:00" });
+  assert.equal((await admin("/api/admin/configurazione", { method: "PUT", body: sbagliata })).status, 400);
+});
+
+test("i clienti vengono riconosciuti dal telefono e accumulano lo storico", async () => {
+  await prenota({ data: sposta(MARTEDI, 21), ora: "20:00", nome: "Mario Rossi", telefono: "+39 333 777 7777" }, "10.6.0.1");
+  await prenota({ data: sposta(MARTEDI, 28), ora: "20:00", nome: "Mario R.", telefono: "3337777777", email: "mario@esempio.it" }, "10.6.0.1");
+  const { clienti } = await (await admin("/api/admin/clienti?q=777")).json();
+  assert.equal(clienti.length, 1);
+  assert.equal(clienti[0].prenotazioni, 2);
+  assert.equal(clienti[0].email, "mario@esempio.it");
+  assert.equal((await admin(`/api/admin/clienti/${clienti[0].id}`, { method: "PATCH", body: { note: "Preferisce il dehors" } })).status, 200);
+  const dopo = await (await admin("/api/admin/clienti?q=Mario")).json();
+  assert.equal(dopo.clienti[0].note, "Preferisce il dehors");
+});
+
+test("le statistiche coprono il periodo richiesto", async () => {
+  const s = await (await admin("/api/admin/statistiche?giorni=30")).json();
+  assert.equal(s.serie.length, 30);
+  assert.ok(s.prossimi_7_giorni.prenotazioni >= 0);
+  assert.equal((await admin("/api/admin/statistiche?giorni=2")).status, 400);
+});
+
+test("la foto accetta solo immagini vere", async () => {
   assert.equal((await chiama("/api/foto")).status, 404);
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
-  const finta = await chiama("/api/admin/foto", { method: "PUT", headers: { cookie }, body: Buffer.from("<script>"), grezzo: true });
-  assert.equal(finta.status, 415);
-  const vera = await chiama("/api/admin/foto", { method: "PUT", headers: { cookie }, body: png, grezzo: true });
-  assert.equal(vera.status, 200);
-  const letta = await chiama("/api/foto");
-  assert.equal(letta.status, 200);
-  assert.equal(letta.headers.get("content-type"), "image/png");
+  assert.equal((await admin("/api/admin/foto", { method: "PUT", body: Buffer.from("<script>"), grezzo: true })).status, 415);
+  assert.equal((await admin("/api/admin/foto", { method: "PUT", body: png, grezzo: true })).status, 200);
+  assert.equal((await chiama("/api/foto")).headers.get("content-type"), "image/png");
 });
 
 test("dopo il logout il cookie viene cancellato", async () => {
-  const r = await chiama("/api/admin/logout", { method: "POST", headers: { cookie } });
-  assert.equal(r.status, 200);
+  const r = await admin("/api/admin/logout", { method: "POST" });
   assert.match(r.headers.get("set-cookie"), /Max-Age=0/);
 });

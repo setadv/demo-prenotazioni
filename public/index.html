@@ -4,53 +4,70 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Osteria del Melograno, prenota un tavolo</title>
+  <title>Prenota un tavolo</title>
   <meta name="description" content="Demo di prenotazione tavoli realizzata da SETADV. Ristorante inventato.">
   <link rel="stylesheet" href="/stile.css">
 </head>
 <body class="pagina">
   <aside class="insegna">
     <div class="insegna-testo">
-      <h1>Osteria del Melograno</h1>
-      <p>Pranzo dalle 12:30, cena dalle 19:30.</p>
+      <h1 id="nome-ristorante">Prenota un tavolo</h1>
+      <p id="indirizzo"></p>
+      <p id="prezzo"></p>
     </div>
-    <img id="foto" class="foto" alt="La sala dell'osteria" hidden>
+    <img id="foto" class="foto" alt="La sala del ristorante" hidden>
+    <p id="descrizione" class="descrizione"></p>
     <p class="avviso">Demo di SETADV: ristorante e prenotazioni sono inventati. Non inserire dati reali.</p>
   </aside>
 
   <main class="prenota">
     <form id="modulo" novalidate>
       <fieldset>
-        <legend>Quando vieni?</legend>
+        <legend>Quanti siete?</legend>
+        <div id="persone" class="scelte" role="radiogroup" aria-label="Numero di persone"></div>
+        <p id="gruppi" class="legenda"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Quando?</legend>
         <div id="giorni" class="giorni"></div>
       </fieldset>
 
       <fieldset>
-        <legend>Quante persone?</legend>
-        <div class="contatore">
-          <button type="button" id="meno" aria-label="Una persona in meno">&minus;</button>
-          <output id="persone" aria-live="polite">2</output>
-          <button type="button" id="piu" aria-label="Una persona in più">+</button>
-        </div>
-      </fieldset>
-
-      <fieldset>
         <legend>A che ora?</legend>
-        <p class="legenda"><i class="seggiola occupata"></i> occupato <i class="seggiola tua"></i> il tuo tavolo <i class="seggiola"></i> libero</p>
-        <div id="fasce" class="fasce" aria-live="polite"><p class="stato">Carico i posti disponibili.</p></div>
+        <div id="fasce" aria-live="polite"><p class="stato">Carico gli orari disponibili.</p></div>
+        <p id="promo-scelta" class="promo-nota" hidden></p>
       </fieldset>
 
       <fieldset>
-        <legend>A che nome?</legend>
+        <legend>I tuoi dati</legend>
         <div class="campi">
-          <label>Nome
-            <input name="nome" autocomplete="off" required minlength="2" maxlength="80" placeholder="Maria Esposito">
+          <label>Nome e cognome
+            <input name="nome" autocomplete="name" required minlength="2" maxlength="80" placeholder="Maria Esposito">
           </label>
-          <label>Telefono o email
-            <input name="contatto" autocomplete="off" required minlength="5" maxlength="120" placeholder="333 0000000">
+          <label>Telefono
+            <input name="telefono" type="tel" autocomplete="tel" required maxlength="30" placeholder="333 0000000">
           </label>
-          <label class="largo">Note per la sala (facoltativo)
-            <textarea name="note" rows="2" maxlength="300" placeholder="Seggiolone, intolleranze, anniversario"></textarea>
+          <label>Email (facoltativa)
+            <input name="email" type="email" autocomplete="email" maxlength="254" placeholder="maria@esempio.it">
+          </label>
+          <label>Occasione
+            <select name="occasione">
+              <option value="">Nessuna in particolare</option>
+              <option value="compleanno">Compleanno</option>
+              <option value="anniversario">Anniversario</option>
+              <option value="romantica">Cena romantica</option>
+              <option value="lavoro">Pranzo o cena di lavoro</option>
+              <option value="famiglia">In famiglia</option>
+              <option value="altro">Altro</option>
+            </select>
+          </label>
+          <label class="largo">Richieste per il ristorante (facoltative)
+            <textarea name="note" rows="2" maxlength="300" placeholder="Seggiolone, intolleranze, tavolo all'aperto"></textarea>
+          </label>
+          <label class="spunta largo">
+            <input type="checkbox" name="privacy" required>
+            <span>Accetto che i miei dati siano usati solo per gestire questa prenotazione.</span>
           </label>
           <label class="esca" aria-hidden="true">Sito
             <input name="sito" tabindex="-1" autocomplete="off">
@@ -63,9 +80,15 @@
     </form>
 
     <section id="conferma" class="conferma" hidden tabindex="-1">
-      <h2>Richiesta inviata</h2>
+      <h2 id="titolo-conferma">Prenotazione ricevuta</h2>
       <p id="riepilogo"></p>
-      <p>La sala la vede subito nell'area riservata e può confermarla.</p>
+      <p class="codice">Codice <strong id="codice"></strong></p>
+      <p id="stato-conferma"></p>
+      <p>Salva questo link: ti serve per vedere o annullare la prenotazione.</p>
+      <div class="link-gestione">
+        <a id="link-gestione" href="/prenotazione">Gestisci la prenotazione</a>
+        <button id="copia-link" class="secondario" type="button">Copia il link</button>
+      </div>
       <button id="nuova" class="azione" type="button">Fai un'altra prenotazione</button>
     </section>
   </main>

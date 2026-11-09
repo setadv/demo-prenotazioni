@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>La tua prenotazione</title>
+  <link rel="stylesheet" href="/stile.css">
+</head>
+<body class="sala">
+  <main class="scheda">
+    <p id="caricamento" class="stato">Carico la prenotazione.</p>
+    <p id="errore" class="messaggio" role="alert" hidden></p>
+    <section id="dettaglio" hidden>
+      <p id="ristorante" class="ristorante"></p>
+      <h1 id="titolo">La tua prenotazione</h1>
+      <dl class="dati">
+        <div><dt>Quando</dt><dd id="quando"></dd></div>
+        <div><dt>Persone</dt><dd id="quanti"></dd></div>
+        <div><dt>A nome di</dt><dd id="nome"></dd></div>
+        <div><dt>Codice</dt><dd id="codice"></dd></div>
+        <div id="riga-sconto" hidden><dt>Sconto</dt><dd id="sconto"></dd></div>
+        <div id="riga-note" hidden><dt>Richieste</dt><dd id="note"></dd></div>
+      </dl>
+      <p id="contatti" class="legenda"></p>
+      <div id="area-annulla" hidden>
+        <button id="annulla" class="secondario pericolo" type="button">Annulla la prenotazione</button>
+        <div id="conferma-annulla" class="conferma-annulla" hidden>
+          <p>Vuoi davvero annullare? Il tavolo tornerà disponibile per altri clienti.</p>
+          <button id="annulla-si" class="azione" type="button">Sì, annulla</button>
+          <button id="annulla-no" class="secondario" type="button">No, tienila</button>
+        </div>
+      </div>
+    </section>
+    <a href="/" class="torna">Fai una nuova prenotazione</a>
+  </main>
+  <script src="/gestisci.js" type="module"></script>
+</body>
+</html>
