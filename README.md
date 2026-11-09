@@ -18,7 +18,13 @@ Ogni prenotazione occupa un tavolo per la durata impostata (90 minuti di base). 
 | Comando di deploy | `npm run deploy` |
 | Branch di produzione | `main` |
 
-`npm run migrate` applica le migrazioni ai database di produzione e Preview. Il comando di build gira anche per le Preview, quindi **le migrazioni devono essere sempre additive**: aggiungere tabelle o colonne, mai rimuoverle o rinominarle finché il codice in produzione le usa. La pulizia delle tabelle vecchie va fatta in una migrazione successiva, dopo il passaggio in produzione.
+`npm run migrate` applica le migrazioni ai database di produzione e Preview. Le build delle Preview non eseguono né il comando di build né quello di deploy, ma solo `npx wrangler preview`: una nuova migrazione arriva al database di Preview solo con un deploy da `main`.
+
+Procedura per una modifica che cambia il database:
+
+1. Pubblica su `main` **solo** il file della migrazione. Deve essere additiva: aggiungere tabelle o colonne, mai rimuoverle o rinominarle finché il codice in produzione le usa.
+2. Sviluppa e prova il nuovo codice su un branch, nella sua Preview.
+3. Unisci il branch a `main`. La pulizia delle tabelle vecchie va in una migrazione successiva.
 
 Il token di build deve avere il permesso D1 Edit, oltre ai permessi per i Workers.
 
