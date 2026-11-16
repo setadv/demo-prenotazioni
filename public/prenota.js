@@ -52,6 +52,19 @@ function testiRistorante() {
   $("descrizione").textContent = info.descrizioni?.[lingua()] || info.descrizione;
   $("gruppi").textContent = t("gruppi", { max: info.max_persone_online, telefono: info.telefono });
   $("logo").alt = t("logo_alt", { nome: info.nome });
+  const moduli = info.moduli ?? {};
+  const q = lingua() === "it" ? "" : `?lang=${lingua()}`;
+  const collegamenti = [];
+  if (moduli.ordini) collegamenti.push(crea("a", "link-menu", t("link_ordina")));
+  if (moduli.ordini) collegamenti.at(-1).href = `/ordina${q}`;
+  if (moduli.gift) collegamenti.push(crea("a", "link-menu", t("link_regalo")));
+  if (moduli.gift) collegamenti.at(-1).href = `/regalo${q}`;
+  $("link-moduli").replaceChildren(...collegamenti);
+  $("riga-fidelity").hidden = !moduli.fidelity;
+  if (moduli.fidelity) {
+    const f = moduli.fidelity;
+    $("testo-fidelity").textContent = t("fidelity_iscrizione", { punti: f.punti_visita, soglia: f.soglia, premio: (f.premio[lingua()] || f.premio.it).toLowerCase() });
+  }
   $("foto").alt = t("foto_alt");
 }
 
@@ -282,6 +295,7 @@ modulo.addEventListener("submit", async (evento) => {
         note: campi.get("note"),
         privacy: campi.get("privacy") === "on",
         marketing: campi.get("marketing") === "on",
+        fidelity: campi.get("fidelity") === "on",
         lingua: lingua(),
         sito: campi.get("sito"),
       }),

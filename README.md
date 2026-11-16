@@ -4,7 +4,10 @@ Sistema di prenotazione tavoli per un ristorante inventato, su Cloudflare Worker
 
 - Pagina pubblica: `/` con scelta di persone, giorno e orario, promozioni e dati del cliente.
 - Menù online: `/menu`, con allergeni (Reg. UE 1169/2011) e filtro per chi ha allergie. Con `?t=<id tavolo>` mostra il numero del tavolo: è l'indirizzo dei QR code.
-- Lingue: pagina di prenotazione, pagina della prenotazione e menù in italiano, inglese, tedesco, francese e spagnolo. I messaggi al cliente partono nella lingua in cui ha prenotato.
+- Asporto e consegna: `/ordina` (carrello, fasce orarie, zone per CAP, minimo d'ordine) e `/ordine` per seguire lo stato. Nessuna commissione di piattaforma.
+- Gift card: `/regalo` per l'acquisto online, `/buono` per la carta con saldo e QR del codice.
+- Sondaggio dopo la visita: `/sondaggio`.
+- Lingue: tutte le pagine pubbliche sono in italiano, inglese, tedesco, francese e spagnolo. I messaggi al cliente partono nella lingua in cui ha prenotato.
 - Gestione della prenotazione da parte del cliente: `/prenotazione` (link con token ricevuto alla conferma).
 - Pannello del gestore: `/admin` con agenda, sala in tempo reale, mappa dei tavoli, clienti (CRM), menù con QR code, statistiche e impostazioni.
 
@@ -83,3 +86,30 @@ Senza `WHATSAPP_MODELLO_CONFERMA` le conferme WhatsApp restano manuali; lo stess
 ## CRM
 
 I clienti sono riconosciuti da telefono o email. Il gestore aggiunge etichette (per esempio VIP), compleanno e note; l'agenda mostra etichette, compleanni vicini e lingua del cliente. Il consenso alle promozioni è una casella facoltativa nel modulo di prenotazione e viene salvato con la data; si revoca dalla scheda del cliente. I gruppi (abituali, VIP, nuovi, da riconquistare, con assenze, compleanno del mese, con consenso) si esportano in CSV per Excel. Comunicazioni promozionali solo ai clienti con consenso.
+
+## Fidelity
+
+Il cliente si iscrive con una casella nel modulo di prenotazione o d'ordine (oppure dal gestore, nella sua scheda). Riceve punti quando la prenotazione passa ad Arrivati e quando un ordine è completato; ogni visita e ogni ordine contano una volta sola, e annullare l'arrivo toglie i punti. Alla soglia il premio nasce da solo, i punti vengono scalati e il cliente riceve un messaggio con il codice `PR-...`. In Fidelity il gestore verifica il codice e lo segna come consegnato.
+
+## Gift card
+
+Il gestore emette dal pannello le gift card vendute al banco. Con Stripe configurato i clienti le comprano online da `/regalo`: la carta si attiva quando arriva il pagamento e il messaggio parte a chi la riceve. Si spendono a scalare: in Fidelity il gestore scrive il codice `GC-...` e l'importo da togliere dal saldo.
+
+## Sondaggio dopo la visita
+
+Se è attivo, il messaggio dopo la visita porta al sondaggio (quattro voti, consiglio da 0 a 10, commento) invece che direttamente alla recensione. Alla fine a tutti compare il link per la recensione, qualunque voto abbiano dato. In Sondaggi ci sono medie, NPS e le risposte da richiamare. Per i messaggi partiti dal Cron Trigger l'app usa l'indirizzo con cui il gestore ha aperto l'agenda; in alternativa imposta la variabile `SITO_URL`.
+
+## Asporto e consegna
+
+I piatti ordinabili sono quelli del menù con prezzo e la spunta "Ordinabile da asporto". Gli orari seguono quelli dei servizi, con il tempo di preparazione e un massimo di ordini per orario. Il gestore accetta l'ordine nella sezione Ordini (parte la conferma al cliente), lo segna pronto o in consegna e poi completato; può stampare la comanda.
+
+## Pagamenti online (Stripe)
+
+Facoltativi: senza Stripe le gift card si vendono al banco e gli ordini si pagano al ritiro o alla consegna. Per attivarli:
+
+1. Nella dashboard Stripe crea un endpoint webhook verso `https://<dominio>/api/stripe/webhook` con gli eventi `checkout.session.completed` e `checkout.session.expired`.
+2. Imposta i secret `STRIPE_SECRET_KEY` e `STRIPE_WEBHOOK_SECRET` (il "signing secret" dell'endpoint).
+
+Non ci sono commissioni di piattaforma; restano le commissioni di Stripe sui pagamenti con carta. I rimborsi si fanno dalla dashboard di Stripe.
+
+Modelli WhatsApp aggiuntivi (facoltativi): `WHATSAPP_MODELLO_SONDAGGIO`, `WHATSAPP_MODELLO_PREMIO`, `WHATSAPP_MODELLO_ORDINE`, `WHATSAPP_MODELLO_GIFT`. I testi da far approvare, con i parametri numerati, sono in Impostazioni, sezione WhatsApp.

@@ -37,6 +37,11 @@ function mostra(p) {
   $("riga-note").hidden = !p.note;
   $("note").textContent = p.note;
   $("contatti").textContent = t("contatti", { indirizzo: p.ristorante.indirizzo, telefono: p.ristorante.telefono });
+  $("fidelity").hidden = !p.fidelity;
+  if (p.fidelity) {
+    const mancano = Math.max(0, p.fidelity.soglia - p.fidelity.saldo);
+    $("fidelity").textContent = t("fidelity_saldo", { saldo: p.fidelity.saldo, mancano });
+  }
   $("area-annulla").hidden = !p.annullabile;
   $("conferma-annulla").hidden = true;
   $("annulla").hidden = false;

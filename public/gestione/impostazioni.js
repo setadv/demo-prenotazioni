@@ -32,10 +32,13 @@ function traduzioni(titolo, chiave, valori, { max = 600, righe = 3, aiuto } = {}
   );
 }
 
-const MODELLI_WHATSAPP = {
-  conferma:
-    "Ciao {{1}}, la tua prenotazione da {{2}} per {{3}} {{4}} alle {{5}} è confermata. Codice {{6}}. Per vederla o annullarla: {{7}}",
-  recensione: "Ciao {{1}}, grazie per essere stati da {{2}}! Se ti va, lasciaci una recensione: ci aiuta molto. {{3}}",
+const NOMI_MODELLI = {
+  conferma: "Conferma della prenotazione",
+  recensione: "Richiesta di recensione",
+  sondaggio: "Sondaggio dopo la visita",
+  premio: "Premio fedeltà",
+  ordine: "Conferma dell'ordine",
+  gift: "Gift card",
 };
 
 export async function vistaImpostazioni(contenitore) {
@@ -234,11 +237,11 @@ export async function vistaImpostazioni(contenitore) {
     return h(
       "section",
       { class: "blocco" },
-      h("h2", {}, "Richiesta di recensione"),
+      h("h2", {}, "Messaggio dopo la visita"),
       h(
         "p",
         { class: "legenda" },
-        "Qualche ora dopo la visita il cliente riceve un messaggio con il link per lasciare una recensione, una sola volta. Parte solo per le prenotazioni segnate come Arrivati e sul canale scelto dal cliente: chi ha scelto WhatsApp senza invio automatico compare in agenda con il pulsante per mandarlo a mano.",
+        "Qualche ora dopo la visita il cliente riceve un solo messaggio: il sondaggio se è attivo (sezione Sondaggi), altrimenti la richiesta di recensione. Parte per le prenotazioni segnate come Arrivati, sul canale scelto dal cliente; chi ha scelto WhatsApp senza invio automatico compare in agenda con il pulsante per mandarlo a mano.",
       ),
       h(
         "div",
@@ -249,13 +252,13 @@ export async function vistaImpostazioni(contenitore) {
           "label",
           { class: "spunta largo" },
           h("input", { type: "checkbox", name: "recensioni_automatiche", checked: Boolean(i.recensioni_automatiche) }),
-          h("span", {}, "Invia la richiesta in automatico. Se disattivato, la chiedi tu dall'agenda con un clic."),
+          h("span", {}, "Invia il messaggio in automatico. Se disattivato, lo mandi tu dall'agenda con un clic."),
         ),
         campo("Ore dopo la fine del pasto", "recensione_dopo_ore", i.recensione_dopo_ore, { type: "number", min: 1, max: 72 }, "La fine del pasto è l'orario più la durata del tavolo."),
         h(
           "label",
           { class: "largo" },
-          "Testo del messaggio",
+          "Testo della richiesta di recensione",
           h("textarea", { name: "messaggio_recensione", rows: 3, maxlength: 600, value: i.messaggio_recensione ?? "" }),
           h("span", { class: "aiuto" }, "Puoi usare: {nome}, {ristorante}, {data}, {recensione}. {recensione} è il link e deve restare nel testo. Lo stesso link va a tutti i clienti: Google non permette di invitare solo quelli soddisfatti."),
         ),
@@ -274,8 +277,8 @@ export async function vistaImpostazioni(contenitore) {
         e.target.textContent = "Copia non riuscita";
       }
     };
-    api("/api/admin/whatsapp")
-      .then((w) => {
+    Promise.all([api("/api/admin/whatsapp"), api("/api/admin/moduli")])
+      .then(([w, moduli]) => {
         const c = w.configurazione;
         const voce = (ok, testo) => h("li", { class: ok ? "ok" : "manca" }, h("span", { class: "segno-stato", "aria-hidden": "true" }, ok ? "✓" : "–"), testo);
         const ora = (iso) => new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" }).format(new Date(iso));
@@ -284,8 +287,9 @@ export async function vistaImpostazioni(contenitore) {
             "ul",
             { class: "lista-controllo" },
             voce(c.token && c.numero, "Numero collegato all'API Cloud (secret WHATSAPP_TOKEN e WHATSAPP_PHONE_ID)"),
-            voce(Boolean(c.modello_conferma), c.modello_conferma ? `Modello di conferma: ${c.modello_conferma}` : "Modello di conferma approvato (secret WHATSAPP_MODELLO_CONFERMA)"),
-            voce(Boolean(c.modello_recensione), c.modello_recensione ? `Modello di recensione: ${c.modello_recensione}` : "Modello di recensione approvato (secret WHATSAPP_MODELLO_RECENSIONE)"),
+            ...Object.entries(moduli.modelli_whatsapp).map(([tipo, m]) =>
+              voce(c.modelli?.[tipo], `${NOMI_MODELLI[tipo]}: ${c.modelli?.[tipo] ? "invio automatico" : `secret ${m.secret}`}`),
+            ),
             voce(c.webhook, "Webhook per ricevere risposte e stati di consegna (secret WHATSAPP_VERIFY_TOKEN e WHATSAPP_APP_SECRET)"),
           ),
           h("p", { class: "legenda" }, `Lingue dei modelli approvati: ${c.lingue}. Per le altre lingue si usa il primo modello dell'elenco.`),
@@ -299,14 +303,14 @@ export async function vistaImpostazioni(contenitore) {
             "details",
             { class: "traduzioni" },
             h("summary", {}, "Testi dei modelli da far approvare a Meta"),
-            h("p", { class: "aiuto" }, "In WhatsApp Manager crea due modelli in italiano con questi testi. I numeri tra parentesi sono i dati che l'app inserisce, in quest'ordine."),
-            Object.entries(MODELLI_WHATSAPP).map(([k, testo]) =>
+            h("p", { class: "aiuto" }, "In WhatsApp Manager crea i modelli in italiano con questi testi, presi dai tuoi messaggi. I numeri tra parentesi sono i dati che l'app inserisce, in quest'ordine. Se cambi un messaggio, aggiorna anche il modello."),
+            Object.entries(moduli.modelli_whatsapp).map(([k, m]) =>
               h(
                 "div",
                 { class: "modello-wa" },
-                h("p", {}, h("strong", {}, k === "conferma" ? "Conferma (categoria Utilità)" : "Richiesta di recensione")),
-                h("pre", {}, testo),
-                h("button", { type: "button", class: "secondario", onclick: copiaTesto(testo) }, "Copia il testo"),
+                h("p", {}, h("strong", {}, NOMI_MODELLI[k]), h("span", { class: "legenda" }, ` · nome del modello nel secret ${m.secret}`)),
+                h("pre", {}, m.testo),
+                h("button", { type: "button", class: "secondario", onclick: copiaTesto(m.testo) }, "Copia il testo"),
               ),
             ),
           ),

@@ -94,7 +94,7 @@ export async function vistaMenu(contenitore) {
   }
 
   function apriPiatto(categoriaId, piatto = null) {
-    const p = piatto ?? { nome: "", descrizione: "", prezzo: null, allergeni: [], tag: [], traduzioni: {}, disponibile: true };
+    const p = piatto ?? { nome: "", descrizione: "", prezzo: null, allergeni: [], tag: [], traduzioni: {}, disponibile: true, asporto: true };
     const errore = h("p", { class: "messaggio", role: "alert", hidden: true });
     const modulo = h(
       "form",
@@ -113,6 +113,7 @@ export async function vistaMenu(contenitore) {
           h("select", { name: "categoria" }, menu.categorie.map((c) => h("option", { value: c.id, selected: c.id === categoriaId }, c.nome))),
         ),
         h("label", { class: "spunta largo" }, h("input", { type: "checkbox", name: "disponibile", checked: p.disponibile }), h("span", {}, "Disponibile oggi")),
+        h("label", { class: "spunta largo" }, h("input", { type: "checkbox", name: "asporto", checked: p.asporto !== false }), h("span", {}, "Ordinabile da asporto e a domicilio (serve il prezzo)")),
       ),
       h(
         "fieldset",
@@ -171,6 +172,7 @@ export async function vistaMenu(contenitore) {
         allergeni: f.getAll("allergeni"),
         tag: f.getAll("tag"),
         disponibile: f.get("disponibile") === "on",
+        asporto: f.get("asporto") === "on",
         traduzioni: leggiTraduzioni(modulo),
       };
       if (!aggiornato.nome) {
@@ -258,6 +260,7 @@ export async function vistaMenu(contenitore) {
       },
     });
     const dettagli = [
+      ...(p.asporto && p.prezzo != null ? ["Ordinabile da asporto"] : []),
       ...p.tag.map((t) => CARATTERISTICHE[t]),
       p.allergeni.length ? `Allergeni: ${p.allergeni.map((a) => ALLERGENI[a].toLowerCase()).join(", ")}` : "Nessun allergene indicato",
     ];

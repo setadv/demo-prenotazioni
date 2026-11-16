@@ -9,6 +9,7 @@ const SEGMENTI = {
   assenze: ["Con assenze", "Almeno una prenotazione non onorata."],
   compleanno: ["Compleanno questo mese", "Clienti con il compleanno nel mese in corso."],
   marketing: ["Consenso promozioni", "Hanno accettato di ricevere novità e offerte: gli unici a cui mandare comunicazioni promozionali."],
+  fidelity: ["Raccolta punti", "Iscritti alla raccolta punti."],
 };
 const SUGGERITE = ["VIP", "Allergie", "Vegetariano", "Famiglia con bambini", "Lavoro", "Amico del locale", "Tavolo fuori"];
 const LINGUE = { it: "Italiano", en: "Inglese", de: "Tedesco", fr: "Francese", es: "Spagnolo" };
@@ -23,6 +24,7 @@ function badgeCliente(c) {
   if (c.no_show) lista.push(h("span", { class: "etichetta allerta" }, `${c.no_show} ${c.no_show === 1 ? "assenza" : "assenze"}`));
   if (c.compleanno) lista.push(h("span", { class: "etichetta occasione" }, `Compleanno ${testoCompleanno(c.compleanno)}`));
   if (c.marketing) lista.push(h("span", { class: "etichetta consenso" }, "Consenso promozioni"));
+  if (c.fidelity) lista.push(h("span", { class: "etichetta consenso" }, `${c.punti} punti`));
   if (c.lingua && c.lingua !== "it") lista.push(h("span", { class: "etichetta" }, LINGUE[c.lingua]));
   return lista;
 }
@@ -72,7 +74,7 @@ function editorEtichette(iniziali) {
 }
 
 async function apriScheda(id, onSalvato) {
-  let { cliente: c, storico } = await api(`/api/admin/clienti/${id}`);
+  let { cliente: c, storico, fidelity } = await api(`/api/admin/clienti/${id}`);
   const etichette = editorEtichette(c.etichette);
   const [meseIniziale, giornoIniziale] = c.compleanno ? [Number(c.compleanno.slice(0, 2)), Number(c.compleanno.slice(3))] : [0, 0];
   const mese = h("select", { name: "mese", "aria-label": "Mese del compleanno" }, h("option", { value: 0 }, "Mese"), MESI.map((m, i) => h("option", { value: i + 1, selected: i + 1 === meseIniziale }, m)));
@@ -116,6 +118,12 @@ async function apriScheda(id, onSalvato) {
           h("span", { class: "aiuto" }, c.marketing && c.marketing_il ? ` Registrato il ${dataBreve(c.marketing_il.slice(0, 10))}.` : " Spunta solo se il cliente te lo ha chiesto: la data viene registrata."),
         ),
       ),
+      h(
+        "label",
+        { class: "spunta largo" },
+        h("input", { type: "checkbox", name: "fidelity", checked: c.fidelity }),
+        h("span", {}, `Iscritto alla raccolta punti: ${fidelity.saldo} punti`, fidelity.premi.some((p) => p.stato === "attivo") ? h("span", { class: "aiuto" }, ` · premio da usare: ${fidelity.premi.find((p) => p.stato === "attivo").codice}`) : null),
+      ),
       h("label", { class: "largo" }, "Note sul cliente", h("textarea", { name: "note", rows: 3, maxlength: 500, value: c.note ?? "", placeholder: "Preferenze, allergie, tavolo preferito" })),
     ),
     errore,
@@ -156,13 +164,14 @@ async function apriScheda(id, onSalvato) {
       return;
     }
     try {
-      ({ cliente: c, storico } = await api(`/api/admin/clienti/${id}`, {
+      ({ cliente: c, storico, fidelity } = await api(`/api/admin/clienti/${id}`, {
         metodo: "PATCH",
         corpo: {
           note: f.get("note"),
           etichette: etichette.valore(),
           compleanno: m ? `${String(m).padStart(2, "0")}-${String(g).padStart(2, "0")}` : null,
           marketing: f.get("marketing") === "on",
+          fidelity: f.get("fidelity") === "on",
           lingua: f.get("lingua"),
         },
       }));

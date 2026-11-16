@@ -6,13 +6,19 @@ import { vistaClienti } from "./clienti.js";
 import { vistaStatistiche } from "./statistiche.js";
 import { vistaImpostazioni } from "./impostazioni.js";
 import { vistaMenu } from "./menu.js";
+import { vistaOrdini } from "./ordini.js";
+import { vistaFidelity } from "./fidelity.js";
+import { vistaSondaggi } from "./sondaggi.js";
 
 const VISTE = {
   agenda: vistaAgenda,
   sala: vistaSala,
   mappa: vistaMappa,
+  ordini: vistaOrdini,
   clienti: vistaClienti,
+  fidelity: vistaFidelity,
   menu: vistaMenu,
+  sondaggi: vistaSondaggi,
   statistiche: vistaStatistiche,
   impostazioni: vistaImpostazioni,
 };
@@ -20,8 +26,11 @@ const TITOLI = {
   agenda: "Agenda",
   sala: "Sala",
   mappa: "Mappa tavoli",
+  ordini: "Ordini",
   clienti: "Clienti",
+  fidelity: "Fidelity e gift card",
   menu: "Menù",
+  sondaggi: "Sondaggi",
   statistiche: "Statistiche",
   impostazioni: "Impostazioni",
 };

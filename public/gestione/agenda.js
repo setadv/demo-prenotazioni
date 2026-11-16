@@ -81,7 +81,7 @@ function bloccoMessaggio(p, tipo, ricarica) {
   const testoPronto = tipo === "recensione" ? p.messaggio_recensione : p.messaggio;
   const n = tipo === "recensione" ? p.notifica_recensione : p.notifica;
   if (!testoPronto && !n) return null;
-  const nome = TIPI_MESSAGGIO[tipo].nome;
+  const nome = tipo === "recensione" && p.tipo_dopo_visita === "sondaggio" ? "Sondaggio dopo la visita" : TIPI_MESSAGGIO[tipo].nome;
   let stato = null;
   if (n?.esito === "inviata") stato = h("span", { class: "invio ok" }, `${nome} inviata via ${NOMI_CANALE[n.canale]}`);
   else if (n?.esito === "manuale") stato = h("span", { class: "invio ok" }, `${nome} inviata a mano via ${NOMI_CANALE[n.canale]}`);
@@ -118,7 +118,7 @@ function bloccoMessaggio(p, tipo, ricarica) {
       }, "Email"),
     );
   }
-  return h("div", { class: "messaggi" }, stato, link.length ? h("span", { class: "legenda" }, tipo === "recensione" ? "Chiedi la recensione:" : "Invia:") : null, link);
+  return h("div", { class: "messaggi" }, stato, link.length ? h("span", { class: "legenda" }, tipo === "conferma" ? "Invia:" : p.tipo_dopo_visita === "sondaggio" ? "Manda il sondaggio:" : "Chiedi la recensione:") : null, link);
 }
 
 const LINGUE_CLIENTE = { en: "Parla inglese", de: "Parla tedesco", fr: "Parla francese", es: "Parla spagnolo" };
@@ -143,6 +143,8 @@ function rigaPrenotazione(p, dati, ricarica) {
   const compleanno = compleannoVicino(p.compleanno, p.data);
   if (compleanno) etichette.push(h("span", { class: "etichetta occasione" }, compleanno));
   if (LINGUE_CLIENTE[p.lingua]) etichette.push(h("span", { class: "etichetta" }, LINGUE_CLIENTE[p.lingua]));
+  if (p.fidelity) etichette.push(h("span", { class: "etichetta consenso" }, `${p.punti} punti`));
+  if (p.premi_attivi) etichette.push(h("span", { class: "etichetta occasione" }, p.premi_attivi === 1 ? "Ha un premio da usare" : `Ha ${p.premi_attivi} premi da usare`));
   if (p.visite >= 2) etichette.push(h("span", { class: "etichetta abituale" }, `Cliente abituale, ${p.visite} visite`));
   else if (p.visite === 1) etichette.push(h("span", { class: "etichetta" }, "Già venuto una volta"));
   if (p.no_show) etichette.push(h("span", { class: "etichetta allerta" }, `${p.no_show} ${p.no_show === 1 ? "assenza" : "assenze"} in passato`));

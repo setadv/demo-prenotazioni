@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Il tuo ordine</title>
+  <link rel="stylesheet" href="/stile.css">
+</head>
+<body class="sala">
+  <main class="scheda">
+    <div id="scelta-lingua" class="scelta-lingua chiara"></div>
+    <p id="caricamento" class="stato" data-t="carico_prenotazione">Carico.</p>
+    <p id="errore" class="messaggio" role="alert" hidden></p>
+    <section id="dettaglio" hidden>
+      <p id="ristorante" class="ristorante"></p>
+      <h1 id="titolo"></h1>
+      <ol id="passi" class="passi-ordine"></ol>
+      <p id="attesa" class="promo-nota" hidden data-t="pagamento_attesa"></p>
+      <dl class="dati">
+        <div><dt data-t="voce_quando">Quando</dt><dd id="quando"></dd></div>
+        <div><dt id="dove-etichetta"></dt><dd id="dove"></dd></div>
+        <div><dt data-t="voce_nome">A nome di</dt><dd id="nome"></dd></div>
+        <div><dt data-t="totale">Totale</dt><dd id="totale"></dd></div>
+      </dl>
+      <ul id="righe" class="righe-carrello scheda-righe"></ul>
+      <p id="contatti" class="legenda"></p>
+    </section>
+    <p class="link-finali"><a href="/menu" class="torna" data-t="vedi_menu">Guarda il menù</a><a href="/ordina" class="torna" data-t="link_ordina">Ordina da asporto</a></p>
+  </main>
+  <script src="/ordine.js" type="module"></script>
+</body>
+</html>

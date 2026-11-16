@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Regala una gift card</title>
+  <link rel="stylesheet" href="/stile.css">
+</head>
+<body class="sala">
+  <main class="scheda">
+    <div id="scelta-lingua" class="scelta-lingua chiara"></div>
+    <p id="ristorante" class="ristorante"></p>
+    <h1 data-t="titolo_regalo">Regala una gift card</h1>
+    <p id="intro"></p>
+    <p id="stato" class="stato" data-t="carico_prenotazione">Carico.</p>
+    <form id="modulo" novalidate hidden>
+      <fieldset>
+        <legend data-t="importo_domanda">Scegli l'importo</legend>
+        <div id="importi" class="scelte" role="radiogroup"></div>
+      </fieldset>
+      <fieldset>
+        <legend data-t="per_chi">Per chi è?</legend>
+        <div class="campi">
+          <label><span data-t="nome_destinatario">Nome di chi la riceve</span><input name="destinatario_nome" required maxlength="80"></label>
+          <label><span data-t="email_destinatario">Email di chi la riceve (facoltativa)</span><input name="destinatario_email" type="email" maxlength="254"></label>
+          <label class="largo"><span data-t="messaggio_regalo">Dedica (facoltativa)</span><textarea name="messaggio" rows="2" maxlength="300"></textarea></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend data-t="da_parte">Da parte di</legend>
+        <div class="campi">
+          <label><span data-t="tuo_nome">Il tuo nome</span><input name="acquirente_nome" autocomplete="name" required minlength="2" maxlength="80"></label>
+          <label><span data-t="tua_email">La tua email</span><input name="acquirente_email" type="email" autocomplete="email" required maxlength="254"></label>
+        </div>
+        <p class="legenda" data-t="info_regalo_email">Se lasci vuota l'email di chi la riceve, mandiamo la gift card a te.</p>
+      </fieldset>
+      <label class="spunta"><input type="checkbox" name="privacy" required><span data-t="privacy_ordine">Accetto che i miei dati siano usati solo per gestire questo ordine.</span></label>
+      <p id="messaggio" class="messaggio" role="alert" hidden></p>
+      <button id="invia" class="azione" type="submit"></button>
+    </form>
+    <p class="link-finali"><a href="/" class="torna" data-t="prenota_tavolo">Prenota un tavolo</a><a href="/menu" class="torna" data-t="vedi_menu">Guarda il menù</a></p>
+  </main>
+  <script src="/regalo.js" type="module"></script>
+</body>
+</html>

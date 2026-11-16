@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Gift card</title>
+  <link rel="stylesheet" href="/stile.css">
+</head>
+<body class="sala">
+  <main class="scheda">
+    <div id="scelta-lingua" class="scelta-lingua chiara"></div>
+    <p id="caricamento" class="stato" data-t="carico_prenotazione">Carico.</p>
+    <p id="errore" class="messaggio" role="alert" hidden></p>
+    <p id="attivazione" class="promo-nota" hidden></p>
+    <article id="carta" class="carta-buono" hidden>
+      <p id="ristorante" class="carta-ristorante"></p>
+      <p id="tipo" class="carta-tipo"></p>
+      <p id="valore" class="carta-valore"></p>
+      <p id="dedica" class="carta-dedica" hidden></p>
+      <p id="persone" class="carta-persone"></p>
+      <p id="stato-buono" class="carta-stato" hidden></p>
+    </article>
+    <section id="codice-box" class="codice-buono" hidden>
+      <img id="qr" alt="" width="168" height="168">
+      <div>
+        <p class="legenda" data-t="mostra_codice">Mostra questo codice al ristorante.</p>
+        <p id="codice" class="codice-grande"></p>
+        <p id="validita" class="legenda"></p>
+      </div>
+    </section>
+    <p id="contatti" class="legenda"></p>
+    <p class="link-finali"><a href="/" class="torna" data-t="prenota_tavolo">Prenota un tavolo</a><a href="/menu" class="torna" data-t="vedi_menu">Guarda il menù</a></p>
+  </main>
+  <script src="/buono.js" type="module"></script>
+</body>
+</html>

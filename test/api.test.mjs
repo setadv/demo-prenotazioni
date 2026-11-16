@@ -19,6 +19,15 @@ const inviati = [];
 const PORTA_POSTA = 8798;
 const VERIFICA_WA = "verifica-webhook-di-test";
 const SEGRETO_WA = "segreto-app-meta-di-test";
+const SEGRETO_STRIPE = "whsec_segreto_di_test";
+
+/** Evento Stripe firmato come lo manda Stripe (header Stripe-Signature). */
+function eventoStripe(tipo, oggetto) {
+  const corpo = JSON.stringify({ id: `evt_${Date.now()}`, type: tipo, data: { object: oggetto } });
+  const t = Math.floor(Date.now() / 1000);
+  const firma = createHmac("sha256", SEGRETO_STRIPE).update(`${t}.${corpo}`).digest("hex");
+  return fetch(`${BASE}/api/stripe/webhook`, { method: "POST", headers: { "content-type": "application/json", "stripe-signature": `t=${t},v1=${firma}` }, body: corpo });
+}
 
 /** Server finto che riceve le chiamate a Resend, Twilio e WhatsApp (Meta) durante i test. */
 function avviaPosta() {
@@ -33,6 +42,7 @@ function avviaPosta() {
       const errore = voce.json?.to?.[0] === "errore@esempio.it";
       res.writeHead(errore ? 500 : 200, { "content-type": "application/json" });
       if (req.url.startsWith("/wa")) res.end(JSON.stringify({ messaging_product: "whatsapp", messages: [{ id: `wamid.test${inviati.length}` }] }));
+      else if (req.url.startsWith("/stripe")) res.end(JSON.stringify({ id: `cs_test_${inviati.length}`, url: `https://checkout.stripe.com/c/pay/cs_test_${inviati.length}` }));
       else res.end(errore ? '{"message":"casella inesistente"}' : '{"id":"finto"}');
     });
   });
@@ -102,6 +112,8 @@ before(async () => {
       "--var", "WHATSAPP_MODELLO_RECENSIONE:richiesta_recensione", "--var", "WHATSAPP_LINGUE:it,en_GB",
       "--var", `WHATSAPP_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/wa`,
       "--var", `WHATSAPP_VERIFY_TOKEN:${VERIFICA_WA}`, "--var", `WHATSAPP_APP_SECRET:${SEGRETO_WA}`,
+      "--var", "STRIPE_SECRET_KEY:sk_test_finta", "--var", `STRIPE_WEBHOOK_SECRET:${SEGRETO_STRIPE}`,
+      "--var", `STRIPE_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/stripe`,
     ],
     { stdio: "ignore", env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" } },
   );
@@ -121,7 +133,16 @@ after(() => {
 });
 
 test("le pagine si aprono con gli header di sicurezza", async () => {
-  for (const [percorso, testo] of [["/", "Prenota un tavolo"], ["/admin", "Area riservata"], ["/prenotazione", "La tua prenotazione"]]) {
+  for (const [percorso, testo] of [
+    ["/", "Prenota un tavolo"],
+    ["/admin", "Area riservata"],
+    ["/prenotazione", "La tua prenotazione"],
+    ["/ordina", "ordina\\.js"],
+    ["/ordine", "ordine\\.js"],
+    ["/regalo", "regalo\\.js"],
+    ["/buono", "buono\\.js"],
+    ["/sondaggio", "sondaggio\\.js"],
+  ]) {
     const r = await chiama(percorso);
     assert.equal(r.status, 200, percorso);
     assert.match(await r.text(), new RegExp(testo));
@@ -456,6 +477,13 @@ test("un canale email senza indirizzo viene rifiutato", async () => {
   assert.equal((await prenota({ data: sposta(MARTEDI, 49), canale: "email", email: "" }, "10.9.0.1")).status, 400);
 });
 
+/** Salva le impostazioni di un modulo partendo da quelle attuali. */
+async function modulo(nome, modifiche) {
+  const { impostazioni } = await (await admin("/api/admin/moduli")).json();
+  const r = await admin(`/api/admin/moduli/${nome}`, { method: "PUT", body: { impostazioni: { ...impostazioni, ...modifiche } } });
+  return r;
+}
+
 const oggiRoma = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date());
 
 test("il menù pubblico ha categorie, piatti, allergeni e traduzioni", async () => {
@@ -600,6 +628,8 @@ test("la richiesta di recensione parte una volta dopo la visita, anche su WhatsA
   assert.equal((await prova({ link_recensioni: "http://esempio.it/recensioni" })).status, 400);
   assert.equal((await prova({ link_recensioni: "https://g.page/r/prova/review", messaggio_recensione: "Grazie della visita, a presto!" })).status, 400);
   assert.equal((await prova({ link_recensioni: "https://g.page/r/prova/review", recensione_dopo_ore: 1, recensioni_automatiche: true })).status, 200);
+  // Qui si prova la sola recensione: il sondaggio (che la sostituisce quando è attivo) ha un test suo.
+  await modulo("sondaggio", { sondaggio_attivo: false });
 
   const ieri = sposta(oggiRoma(), -1);
   const crea = (dati) =>
@@ -666,6 +696,186 @@ test("il webhook WhatsApp accetta solo richieste firmate da Meta", async () => {
   assert.ok(ricevuto);
   assert.equal(ricevuto.cliente, "Sara Gialli");
   assert.equal(stato.inviati.find((m) => m.cliente === inviato.cliente).stato, "read");
+});
+
+test("la raccolta punti accredita le visite e crea il premio in automatico", async () => {
+  assert.equal((await modulo("fidelity", { fidelity_attiva: true, punti_visita: 10, premio_soglia: 20, messaggio_premio: "Ciao {nome}" })).status, 400, "il messaggio deve avere il link");
+  assert.equal((await modulo("fidelity", { fidelity_attiva: true, punti_visita: 10, premio_soglia: 20 })).status, 200);
+  const data = sposta(MARTEDI, 70);
+  const prima = await (await prenota({ data, ora: "20:00", nome: "Fede Punti", telefono: "333 5550001", email: "fede@esempio.it", canale: "email", fidelity: true }, "10.30.0.1")).json();
+  const seconda = await (await prenota({ data, ora: "21:00", nome: "Fede Punti", telefono: "333 5550001", email: "fede@esempio.it", canale: "email", fidelity: true }, "10.30.0.1")).json();
+  await admin(`/api/admin/prenotazioni/${prima.id}`, { method: "PATCH", body: { stato: "arrivata" } });
+  await admin(`/api/admin/prenotazioni/${prima.id}`, { method: "PATCH", body: { stato: "arrivata" } });
+  await new Promise((f) => setTimeout(f, 400));
+  let clienti = await (await admin("/api/admin/clienti?segmento=fidelity&q=Fede")).json();
+  assert.equal(clienti.clienti[0].punti, 10, "la stessa visita non dà punti due volte");
+
+  await admin(`/api/admin/prenotazioni/${seconda.id}`, { method: "PATCH", body: { stato: "arrivata" } });
+  const email = await attendiInvio((v) => v.json?.to?.[0] === "fede@esempio.it" && /PR-/.test(v.json.text));
+  assert.ok(email, "il messaggio del premio non è partito");
+  assert.match(email.json.subject, /premio/);
+  const [, id, token] = email.json.text.match(/\/buono#tipo=premio&id=([0-9a-f-]+)&t=([\w-]+)/);
+  const buono = await (await chiama(`/api/buoni/premio/${id}`, { headers: { "x-buono-token": token } })).json();
+  assert.equal(buono.stato, "attivo");
+  assert.match(buono.descrizioni.en, /dessert/);
+  assert.equal((await chiama(`/api/buoni/premio/${id}`, { headers: { "x-buono-token": "sbagliato" } })).status, 404);
+
+  clienti = await (await admin("/api/admin/clienti?segmento=fidelity&q=Fede")).json();
+  assert.equal(clienti.clienti[0].punti, 0, "la soglia viene scalata quando nasce il premio");
+  const trovato = await (await admin(`/api/admin/codice?c=${buono.codice}`)).json();
+  assert.equal(trovato.tipo, "premio");
+  assert.equal((await admin(`/api/admin/premi/${id}/usa`, { method: "POST" })).status, 200);
+  assert.equal((await admin(`/api/admin/premi/${id}/usa`, { method: "POST" })).status, 409);
+
+  await admin(`/api/admin/prenotazioni/${seconda.id}`, { method: "PATCH", body: { stato: "confermata" } });
+  await new Promise((f) => setTimeout(f, 300));
+  const scheda = await (await admin(`/api/admin/clienti/${clienti.clienti[0].id}`)).json();
+  assert.equal(scheda.fidelity.saldo, -10, "annullare l'arrivo toglie i punti della visita");
+  assert.equal(scheda.fidelity.premi[0].stato, "usato");
+});
+
+test("le gift card si emettono al banco o si comprano online e si spendono a scalare", async () => {
+  const info = await (await chiama("/api/gift")).json();
+  assert.equal(info.online, true);
+  assert.deepEqual(info.importi, [25, 50, 100]);
+
+  const emessa = await admin("/api/admin/gift", { method: "POST", body: { importo: 50, acquirente_nome: "Zia Anna", destinatario_nome: "Luca", destinatario_email: "luca@esempio.it", messaggio: "Buon compleanno!" } });
+  assert.equal(emessa.status, 201);
+  const { id, codice } = await emessa.json();
+  const email = await attendiInvio((v) => v.json?.to?.[0] === "luca@esempio.it");
+  assert.ok(email, "la gift card non è arrivata al destinatario");
+  assert.match(email.json.text, new RegExp(`Zia Anna ti ha regalato una gift card da 50,00`));
+  const token = email.json.text.match(/&t=([\w-]+)/)[1];
+  const pubblica = await (await chiama(`/api/buoni/gift/${id}`, { headers: { "x-buono-token": token } })).json();
+  assert.equal(pubblica.saldo, 5000);
+  assert.equal(pubblica.messaggio, "Buon compleanno!");
+
+  const usata = await (await admin(`/api/admin/gift/${id}/usa`, { method: "POST", body: { importo: "20,00", nota: "Cena del 12" } })).json();
+  assert.equal(usata.gift_card.saldo, 3000);
+  assert.equal((await admin(`/api/admin/gift/${id}/usa`, { method: "POST", body: { importo: "40" } })).status, 409);
+  assert.equal((await (await admin(`/api/admin/codice?c=${codice.toLowerCase()}`)).json()).saldo, 3000);
+  assert.equal((await admin("/api/admin/codice?c=GC-NESSUNO")).status, 404);
+  const qr = await chiama(`/api/qr?codice=${codice}`);
+  assert.match(await qr.text(), new RegExp(`<title>${codice}</title>`));
+
+  assert.equal((await chiama("/api/gift", { method: "POST", body: { importo: 33, acquirente_nome: "Mario", acquirente_email: "m@esempio.it", destinatario_nome: "Pia", privacy: true } })).status, 400);
+  const online = await chiama("/api/gift", {
+    method: "POST",
+    body: { importo: 25, acquirente_nome: "Mario Bianchi", acquirente_email: "mario@esempio.it", destinatario_nome: "Pia", destinatario_email: "pia@esempio.it", privacy: true, lingua: "en" },
+  });
+  assert.equal(online.status, 201);
+  const acquisto = await online.json();
+  assert.match(acquisto.url_pagamento, /^https:\/\/checkout\.stripe\.com\//);
+  const sessione = inviati.findLast((v) => v.percorso === "/stripe/v1/checkout/sessions");
+  assert.equal(sessione.auth, "Bearer sk_test_finta");
+  assert.equal(sessione.form["line_items[0][price_data][unit_amount]"], "2500");
+  assert.equal(sessione.form["metadata[tipo]"], "gift");
+  assert.equal(sessione.form.locale, "en");
+  let elenco = await (await admin("/api/admin/gift")).json();
+  assert.equal(elenco.gift_card.some((g) => g.id === acquisto.id), false, "non pagata, non compare");
+
+  const falso = await fetch(`${BASE}/api/stripe/webhook`, { method: "POST", headers: { "stripe-signature": "t=1,v1=00" }, body: "{}" });
+  assert.equal(falso.status, 400);
+  assert.equal((await eventoStripe("checkout.session.completed", { id: "cs_x", payment_status: "paid", metadata: { tipo: "gift", id: acquisto.id } })).status, 200);
+  const regalo = await attendiInvio((v) => v.json?.to?.[0] === "pia@esempio.it");
+  assert.ok(regalo, "dopo il pagamento la gift card arriva a chi la riceve");
+  assert.match(regalo.json.text, /^Hi Pia, Mario Bianchi has given you a €25\.00 gift card/);
+  elenco = await (await admin("/api/admin/gift")).json();
+  assert.equal(elenco.gift_card.find((g) => g.id === acquisto.id).stato, "attiva");
+  await eventoStripe("checkout.session.completed", { id: "cs_x", payment_status: "paid", metadata: { tipo: "gift", id: acquisto.id } });
+  await new Promise((f) => setTimeout(f, 300));
+  assert.equal(inviati.filter((v) => v.json?.to?.[0] === "pia@esempio.it").length, 1, "un evento ripetuto non attiva due volte");
+});
+
+test("il sondaggio dopo la visita raccoglie i voti e mostra a tutti il link per la recensione", async () => {
+  assert.equal((await modulo("sondaggio", { sondaggio_attivo: true, messaggio_sondaggio: "Grazie della visita, a presto!" })).status, 400);
+  assert.equal((await modulo("sondaggio", { sondaggio_attivo: true })).status, 200);
+  const ieri = sposta(oggiRoma(), -1);
+  const p = await (await admin("/api/admin/prenotazioni", {
+    method: "POST",
+    body: { data: ieri, ora: "13:00", persone: 2, origine: "walk_in", nome: "Vera Voti", telefono: "333 8880001", email: "vera@esempio.it", canale: "email" },
+  })).json();
+  await admin(`/api/admin/agenda?data=${ieri}`);
+  const email = await attendiInvio((v) => v.json?.to?.[0] === "vera@esempio.it" && /sondaggio/.test(v.json.text));
+  assert.ok(email, "il sondaggio non è partito");
+  const [, id, token] = email.json.text.match(/\/sondaggio#id=([0-9a-f-]+)&t=([\w-]+)/);
+  assert.equal(id, p.id);
+  const h = { "x-sondaggio-token": token };
+  const scheda = await (await chiama(`/api/sondaggio/${id}`, { headers: h })).json();
+  assert.equal(scheda.compilato, false);
+  assert.equal((await chiama(`/api/sondaggio/${id}`, { method: "POST", headers: h, body: { voto_cibo: 9 } })).status, 400);
+  const voti = { voto_cibo: 5, voto_servizio: 2, voto_ambiente: 4, voto_prezzo: 3, consiglio: 6, commento: "Cibo ottimo, servizio lento." };
+  const risposta = await chiama(`/api/sondaggio/${id}`, { method: "POST", headers: h, body: voti });
+  assert.equal(risposta.status, 201);
+  assert.equal((await risposta.json()).link_recensioni, "https://g.page/r/prova/review", "anche chi dà voti bassi vede il link");
+  assert.equal((await chiama(`/api/sondaggio/${id}`, { method: "POST", headers: h, body: voti })).status, 409);
+  const r = await (await admin("/api/admin/sondaggi?giorni=30")).json();
+  assert.equal(r.risposte, 1);
+  assert.equal(r.nps, -100);
+  assert.equal(r.elenco[0].critico, true);
+  assert.equal(r.elenco[0].nome, "Vera Voti");
+  assert.equal((await admin(`/api/admin/sondaggi/${id}`, { method: "PATCH", body: { gestito: true } })).status, 200);
+});
+
+test("asporto e consegna: carrello, fasce, minimo, zone, stati e pagamento online", async () => {
+  const info = await (await chiama("/api/ordini/info")).json();
+  assert.equal(info.attivi, true);
+  const data = info.giorni.at(-1);
+  let fasce = (await (await chiama(`/api/ordini/fasce?data=${data}`)).json()).fasce;
+  assert.ok(fasce.length > 3);
+  const base = { tipo: "asporto", data, ora: fasce[0].ora, nome: "Olga Ordini", telefono: "333 9990077", email: "olga@esempio.it", canale: "email", privacy: true, fidelity: true };
+  const ordina = (dati, ip = "10.40.0.1") => chiama("/api/ordini", { method: "POST", headers: { "cf-connecting-ip": ip }, body: { ...base, ...dati } });
+
+  assert.equal((await ordina({ righe: [{ id: "tiramisu", quantita: 1 }] })).status, 409, "un piatto esaurito non si ordina");
+  assert.equal((await ordina({ righe: [] })).status, 400);
+  const sotto = await ordina({ tipo: "consegna", indirizzo: "Via Roma 1", cap: "80031", righe: [{ id: "margherita", quantita: 1 }], lingua: "en" });
+  assert.equal((await sotto.json()).errore, "The minimum order for delivery is €15.00.");
+
+  const r = await ordina({ righe: [{ id: "risotto", quantita: 2 }, { id: "margherita", quantita: 1 }, { id: "risotto", quantita: 1 }], prezzo: 1 });
+  assert.equal(r.status, 201);
+  const o = await r.json();
+  assert.equal(o.totale, 3 * 1300 + 850, "i prezzi li calcola il server");
+  const letto = await (await chiama(`/api/ordini/${o.id}`, { headers: { "x-ordine-token": o.token } })).json();
+  assert.deepEqual(letto.righe.map((x) => [x.nome, x.quantita]), [["Risotto alla zucca", 3], ["Margherita", 1]]);
+
+  const consegna = await (await ordina({ tipo: "consegna", ora: fasce[1].ora, indirizzo: "Via Roma 1", cap: "80031", righe: [{ id: "risotto", quantita: 2 }] })).json();
+  assert.equal(consegna.totale, 2600 + 300);
+
+  assert.equal((await modulo("ordini", { consegna_cap: "80031, 80032", ordini_max_fascia: 1 })).status, 200);
+  assert.equal((await ordina({ tipo: "consegna", ora: fasce[2].ora, indirizzo: "Via Roma 1", cap: "00100", righe: [{ id: "risotto", quantita: 2 }] })).status, 400);
+  assert.equal((await ordina({ ora: fasce[0].ora, righe: [{ id: "risotto", quantita: 1 }] })).status, 409, "fascia piena");
+  fasce = (await (await chiama(`/api/ordini/fasce?data=${data}`)).json()).fasce;
+  assert.equal(fasce.some((f) => f.ora === base.ora), false);
+
+  const percorso = `/api/admin/ordini/${o.id}`;
+  assert.equal((await admin(percorso, { method: "PATCH", body: { stato: "completato" } })).status, 409);
+  assert.equal((await admin(percorso, { method: "PATCH", body: { stato: "in_preparazione" } })).status, 200);
+  const conferma = await attendiInvio((v) => v.json?.to?.[0] === "olga@esempio.it");
+  assert.ok(conferma, "conferma dell'ordine non inviata");
+  assert.match(conferma.json.text, /ordine .+ è confermato: ritiro .+ Totale 47,50/);
+  assert.match(conferma.json.text, /\/ordine#id=/);
+  assert.equal((await admin(percorso, { method: "PATCH", body: { stato: "in_consegna" } })).status, 409, "l'asporto non va in consegna");
+  await admin(percorso, { method: "PATCH", body: { stato: "pronto" } });
+  await admin(percorso, { method: "PATCH", body: { stato: "completato" } });
+  await new Promise((f) => setTimeout(f, 400));
+  const cliente = (await (await admin("/api/admin/clienti?q=Olga")).json()).clienti[0];
+  const scheda = await (await admin(`/api/admin/clienti/${cliente.id}`)).json();
+  assert.equal(scheda.fidelity.movimenti.find((m) => m.motivo === `Ordine ${o.codice}`).punti, 47, "un punto per euro di ordine");
+  assert.equal(scheda.fidelity.premi.length, 2, "con la soglia a 20 punti nascono due premi");
+  assert.equal(scheda.fidelity.saldo, 7);
+
+  const online = await (await ordina({ ora: fasce[0].ora, pagamento: "online", righe: [{ id: "margherita", quantita: 2 }] }, "10.40.0.2")).json();
+  assert.equal(online.stato, "in_attesa_pagamento");
+  assert.match(online.url_pagamento, /checkout\.stripe\.com/);
+  let elenco = await (await admin(`/api/admin/ordini?data=${data}`)).json();
+  assert.equal(elenco.ordini.some((x) => x.id === online.id), false);
+  await eventoStripe("checkout.session.completed", { id: "cs_o", payment_status: "paid", metadata: { tipo: "ordine", id: online.id } });
+  elenco = await (await admin(`/api/admin/ordini?data=${data}`)).json();
+  const pagato = elenco.ordini.find((x) => x.id === online.id);
+  assert.equal(pagato.stato, "nuovo");
+  assert.equal(pagato.pagato, true);
+  assert.match(pagato.messaggio, /confermato/);
+  await modulo("ordini", { consegna_cap: "", ordini_max_fascia: 4 });
 });
 
 test("dopo il logout il cookie viene cancellato", async () => {

@@ -1,11 +1,13 @@
+import { fidelityCliente } from "./fidelity.js";
 import { LINGUE } from "./lingue.js";
 import { ErroreRichiesta, SQL_ATTIVI, json, leggiJson, oraRoma, spostaData, testo } from "./util.js";
 
-export const SEGMENTI = ["tutti", "abituali", "vip", "nuovi", "riconquistare", "assenze", "compleanno", "marketing"];
+export const SEGMENTI = ["tutti", "abituali", "vip", "nuovi", "riconquistare", "assenze", "compleanno", "marketing", "fidelity"];
 
 /** Riepilogo per cliente, calcolato dalle prenotazioni: base comune di elenco, conteggi ed esportazione. */
 const RIEPILOGO = `
   SELECT c.id, c.nome, c.telefono, c.email, c.note, c.etichette, c.compleanno, c.marketing, c.marketing_il, c.lingua, c.creato_il,
+    c.fidelity, (SELECT COALESCE(SUM(m.punti), 0) FROM punti_movimenti m WHERE m.cliente_id = c.id) AS punti,
     COUNT(p.id) AS prenotazioni,
     COALESCE(SUM(p.stato = 'arrivata'), 0) AS visite,
     COALESCE(SUM(p.stato = 'no_show'), 0) AS no_show,
@@ -25,6 +27,7 @@ const CONDIZIONI = {
   assenze: "r.no_show >= 1",
   compleanno: "r.compleanno LIKE :mese",
   marketing: "r.marketing = 1",
+  fidelity: "r.fidelity = 1",
 };
 
 function parametri(url) {
@@ -59,6 +62,7 @@ const pulisciCliente = (c) => ({
   ...c,
   etichette: c.etichette ? c.etichette.split(",") : [],
   marketing: Boolean(c.marketing),
+  fidelity: Boolean(c.fidelity),
 });
 
 export async function elencoClienti(url, env) {
@@ -87,7 +91,7 @@ export async function dettaglioCliente(env, id) {
     ).bind(id),
   ]);
   if (!cliente.results.length) throw new ErroreRichiesta("Cliente non trovato.", 404);
-  return json({ cliente: pulisciCliente(cliente.results[0]), storico: storico.results });
+  return json({ cliente: pulisciCliente(cliente.results[0]), storico: storico.results, fidelity: await fidelityCliente(env, id) });
 }
 
 function compleannoValido(valore) {
@@ -104,7 +108,7 @@ function compleannoValido(valore) {
 /** Aggiorna solo i campi inviati: note, etichette, compleanno, consenso promozionale e lingua. */
 export async function modificaCliente(request, env, id) {
   const corpo = await leggiJson(request);
-  const attuale = await env.DB.prepare("SELECT marketing FROM clienti WHERE id = ?").bind(id).first();
+  const attuale = await env.DB.prepare("SELECT marketing, fidelity FROM clienti WHERE id = ?").bind(id).first();
   if (!attuale) throw new ErroreRichiesta("Cliente non trovato.", 404);
   const campi = [];
   const valori = [];
@@ -130,6 +134,13 @@ export async function modificaCliente(request, env, id) {
     else if (attuale.marketing) campi.push("marketing = 1");
     else {
       campi.push("marketing = 1", "marketing_il = ?");
+      valori.push(new Date().toISOString());
+    }
+  }
+  if ("fidelity" in corpo) {
+    if (corpo.fidelity !== true) campi.push("fidelity = 0");
+    else if (!attuale.fidelity) {
+      campi.push("fidelity = 1", "fidelity_il = ?");
       valori.push(new Date().toISOString());
     }
   }
@@ -171,6 +182,8 @@ export async function esportaClienti(url, env) {
     "Consenso promozioni",
     "Data consenso",
     "Lingua",
+    "Raccolta punti",
+    "Punti",
     "Note",
   ];
   const righe = results.map((c) =>
@@ -188,6 +201,8 @@ export async function esportaClienti(url, env) {
       c.marketing ? "sì" : "no",
       c.marketing_il?.slice(0, 10),
       c.lingua,
+      c.fidelity ? "sì" : "no",
+      c.punti,
       c.note,
     ]
       .map(cella)

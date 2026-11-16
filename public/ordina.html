@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Ordina</title>
+  <link rel="stylesheet" href="/stile.css">
+</head>
+<body class="menu-pagina">
+  <header class="testa-menu">
+    <div class="testa-menu-riga">
+      <div id="scelta-lingua" class="scelta-lingua"></div>
+      <a class="link-menu" href="/" data-t="prenota_tavolo">Prenota un tavolo</a>
+    </div>
+    <div class="testa-menu-testo">
+      <h1 id="nome-ristorante">Ordina</h1>
+      <p class="sottotitolo" data-t="titolo_ordina">Ordina da asporto o a domicilio</p>
+    </div>
+  </header>
+  <main class="ordina">
+    <p id="stato" class="stato" data-t="carico_menu">Carico il menù.</p>
+    <div id="contenuto" class="layout-ordina" hidden>
+      <section class="piatti-ordina" aria-labelledby="titolo-piatti">
+        <h2 id="titolo-piatti" class="titolo-sezione" data-t="scegli_piatti">Scegli i piatti</h2>
+        <div id="categorie"></div>
+      </section>
+      <form id="modulo" class="pannello-ordine" novalidate>
+        <fieldset>
+          <legend data-t="tipo_domanda">Come vuoi ricevere l'ordine?</legend>
+          <div id="tipi" class="scelta-tipo" role="radiogroup"></div>
+          <p id="info-consegna" class="legenda" hidden></p>
+        </fieldset>
+        <fieldset>
+          <legend data-t="carrello">Il tuo ordine</legend>
+          <div id="carrello" aria-live="polite"></div>
+        </fieldset>
+        <fieldset>
+          <legend data-t="quando_ordine">Per quando?</legend>
+          <div class="campi">
+            <label><span data-t="giorno">Giorno</span><select id="giorno" name="data"></select></label>
+            <label><span data-t="orario">Orario</span><select id="ora" name="ora"></select></label>
+          </div>
+          <p id="nessuna-fascia" class="stato" hidden data-t="nessuna_fascia">Nessun orario disponibile.</p>
+        </fieldset>
+        <fieldset>
+          <legend data-t="tuoi_dati">I tuoi dati</legend>
+          <div class="campi">
+            <label class="largo"><span data-t="nome">Nome e cognome</span><input name="nome" autocomplete="name" required minlength="2" maxlength="80"></label>
+            <label><span data-t="telefono">Telefono</span><input name="telefono" type="tel" autocomplete="tel" required maxlength="30"></label>
+            <label><span id="etichetta-email" data-t="email_facoltativa">Email (facoltativa)</span><input name="email" type="email" autocomplete="email" maxlength="254"></label>
+            <label id="riga-indirizzo" class="largo" hidden><span data-t="indirizzo">Indirizzo e numero civico</span><input name="indirizzo" autocomplete="street-address" maxlength="160"></label>
+            <label id="riga-cap" hidden><span data-t="cap">CAP</span><input name="cap" inputmode="numeric" autocomplete="postal-code" maxlength="5" pattern="\d{5}"></label>
+            <fieldset class="largo canali">
+              <legend class="etichetta-campo" data-t="canale_domanda">Come vuoi ricevere la conferma?</legend>
+              <label class="spunta"><input type="radio" name="canale" value="sms" checked> SMS</label>
+              <label class="spunta"><input type="radio" name="canale" value="whatsapp"> WhatsApp</label>
+              <label class="spunta"><input type="radio" name="canale" value="email"> Email</label>
+            </fieldset>
+            <label class="largo"><span data-t="note">Richieste per il ristorante (facoltative)</span><textarea name="note" rows="2" maxlength="300"></textarea></label>
+          </div>
+        </fieldset>
+        <fieldset id="blocco-pagamento">
+          <legend data-t="pagamento_domanda">Come vuoi pagare?</legend>
+          <div id="pagamenti" class="canali"></div>
+        </fieldset>
+        <label class="spunta"><input type="checkbox" name="privacy" required><span data-t="privacy_ordine">Accetto che i miei dati siano usati solo per gestire questo ordine.</span></label>
+        <label id="riga-fidelity" class="spunta" hidden><input type="checkbox" name="fidelity"><span data-t="fidelity_breve">Partecipa alla raccolta punti.</span></label>
+        <label class="spunta"><input type="checkbox" name="marketing"><span data-t="marketing">Voglio ricevere novità e offerte.</span></label>
+        <label class="esca" aria-hidden="true">Sito<input name="sito" tabindex="-1" autocomplete="off"></label>
+        <p id="messaggio" class="messaggio" role="alert" hidden></p>
+        <button id="invia" class="azione" type="submit" disabled></button>
+      </form>
+      <section id="conferma" class="conferma pannello-ordine" hidden tabindex="-1">
+        <h2 data-t="ordine_ricevuto">Ordine ricevuto</h2>
+        <p class="codice"><span data-t="codice">Codice</span> <strong id="codice"></strong></p>
+        <p id="testo-conferma"></p>
+        <a id="link-ordine" class="azione cta-menu" href="/ordine" data-t="segui_ordine">Segui l'ordine</a>
+      </section>
+    </div>
+    <div id="barra-totale" class="barra-totale" hidden>
+      <span id="totale-barra"></span>
+      <a href="#modulo" class="azione" data-t="carrello">Il tuo ordine</a>
+    </div>
+  </main>
+  <script src="/ordina.js" type="module"></script>
+</body>
+</html>

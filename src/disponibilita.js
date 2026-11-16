@@ -151,18 +151,20 @@ export async function inserisciPrenotazione(env, riga, tavoliDaProvare) {
 
 /**
  * Riconosce il cliente da telefono o email, oppure lo crea.
- * Se il cliente ha dato il consenso alle promozioni lo registra con la data; la lingua segue l'ultima prenotazione.
+ * Consenso alle promozioni e iscrizione alla raccolta punti si registrano con la data; la lingua segue l'ultima prenotazione.
  */
 export async function trovaOCreaCliente(env, dati) {
   const id = await cercaOCrea(env, dati);
-  if (id && (dati.marketing || dati.lingua)) {
+  if (id && (dati.marketing || dati.lingua || dati.fidelity)) {
     await env.DB.prepare(
       `UPDATE clienti SET lingua = COALESCE(?2, lingua),
          marketing = CASE WHEN ?3 = 1 THEN 1 ELSE marketing END,
-         marketing_il = CASE WHEN ?3 = 1 THEN COALESCE(marketing_il, ?4) ELSE marketing_il END
+         marketing_il = CASE WHEN ?3 = 1 THEN COALESCE(marketing_il, ?4) ELSE marketing_il END,
+         fidelity = CASE WHEN ?5 = 1 THEN 1 ELSE fidelity END,
+         fidelity_il = CASE WHEN ?5 = 1 THEN COALESCE(fidelity_il, ?4) ELSE fidelity_il END
        WHERE id = ?1`,
     )
-      .bind(id, dati.lingua ?? null, dati.marketing ? 1 : 0, new Date().toISOString())
+      .bind(id, dati.lingua ?? null, dati.marketing ? 1 : 0, new Date().toISOString(), dati.fidelity ? 1 : 0)
       .run();
   }
   return id;

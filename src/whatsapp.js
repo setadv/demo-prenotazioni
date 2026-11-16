@@ -92,6 +92,7 @@ export async function statoWhatsApp(url, env) {
       webhook: Boolean(env.WHATSAPP_VERIFY_TOKEN && env.WHATSAPP_APP_SECRET),
       conferme_automatiche: attivi.whatsapp,
       recensioni_automatiche: attivi.whatsapp_recensione,
+      modelli: attivi.whatsapp_modelli,
     },
     webhook_url: `${url.origin}/api/whatsapp/webhook`,
     ricevuti: ricevuti.results,

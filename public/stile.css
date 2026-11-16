@@ -308,3 +308,111 @@ input::placeholder, textarea::placeholder { color: #70837b; }
 .invito-menu .secondario { color: var(--melograno); font-weight: 600; text-decoration: none; border-color: var(--melograno); }
 .invito-menu .secondario::after { content: " ↗"; }
 .visivamente-nascosto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Collegamenti a ordini e gift card nella colonna del ristorante */
+.link-moduli { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 !important; }
+.link-moduli:empty { display: none; }
+.link-moduli .link-menu { margin-top: .5rem; }
+.nota-fidelity { margin: 0 0 1rem; padding: .7rem .9rem; background: var(--ocra-chiaro); border-radius: 6px; }
+
+/* Ordini */
+.ordina { max-width: 1180px; margin: 0 auto; padding: 1.5rem clamp(16px, 4vw, 3rem) 6rem; }
+.layout-ordina { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 2rem; align-items: start; }
+.titolo-sezione { margin: 0 0 1rem; font-size: 1.8rem; }
+.titolo-categoria { margin: 1.5rem 0 .25rem; font-size: 1.4rem; border-bottom: 2px solid var(--melograno); padding-bottom: .3rem; }
+.piatto-ordine { grid-template-columns: 1fr auto auto; align-items: center; }
+.piatto-ordine h4 { margin: 0; font: 400 1.15rem/1.25 "Young Serif", Georgia, serif; }
+.piatto-ordine .desc { margin: .15rem 0 0; }
+.piatto-ordine.scelto { background: linear-gradient(90deg, var(--rosa-chiaro), transparent 70%); }
+.piatto-ordine.esaurito .testo-piatto { opacity: .55; }
+.stepper { display: flex; align-items: center; gap: .3rem; }
+.stepper .secondario { width: 2.4rem; height: 2.4rem; padding: 0; font-size: 1.2rem; line-height: 1; border-radius: 50%; }
+.stepper .secondario:disabled { opacity: .35; cursor: not-allowed; }
+.stepper .quantita { min-width: 1.4rem; font-weight: 700; text-align: center; }
+.pannello-ordine { position: sticky; top: 1rem; padding: 1.25rem; background: var(--bianco); border: 1px solid var(--linea); border-radius: 8px; }
+.pannello-ordine fieldset { margin-bottom: 1.5rem; }
+.pannello-ordine legend { font-size: 1.3rem; }
+.pannello-ordine .campi { grid-template-columns: 1fr 1fr; }
+.pannello-ordine > .spunta { margin-bottom: .6rem; }
+.scelta-tipo { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.scelta-tipo-pulsante { padding: .7rem .5rem; font-weight: 600; background: var(--celadon); border: 1px solid var(--linea); border-radius: 6px; }
+.scelta-tipo-pulsante[aria-checked="true"] { color: var(--bianco); background: var(--bottiglia); border-color: var(--bottiglia); }
+.righe-carrello { display: grid; gap: .3rem; margin: 0 0 .6rem; padding: 0; list-style: none; }
+.righe-carrello li { display: flex; justify-content: space-between; gap: 1rem; }
+.totali-ordine { margin: 0; padding-top: .5rem; border-top: 1px solid var(--celadon-scuro); }
+.totali-ordine div { display: flex; justify-content: space-between; }
+.totali-ordine dd { margin: 0; }
+.totali-ordine .grande { margin-top: .25rem; font: 400 1.3rem "Young Serif", Georgia, serif; }
+.barra-totale { display: none; }
+.scheda-righe { padding: .75rem 1rem; background: var(--bianco); border-radius: 6px; }
+.passi-ordine { display: flex; gap: .3rem; margin: 0 0 1.25rem; padding: 0; list-style: none; counter-reset: passo; }
+.passi-ordine li { flex: 1; padding: .55rem .5rem; font-size: .85rem; font-weight: 600; text-align: center; color: var(--grigio); background: var(--celadon-scuro); border-radius: 4px; }
+.passi-ordine li.fatto { color: var(--bianco); background: var(--verde); }
+.passi-ordine li.attuale { color: var(--bianco); background: var(--melograno); }
+
+/* Gift card e premi */
+.scelta-importo { min-width: 5rem; }
+.carta-buono {
+  position: relative;
+  display: grid;
+  gap: .35rem;
+  margin: 0 0 1.25rem;
+  padding: 1.75rem 1.5rem;
+  overflow: hidden;
+  color: var(--bianco);
+  background: radial-gradient(circle at 85% 15%, var(--seme) 0, transparent 45%), linear-gradient(135deg, var(--melograno), var(--melograno-scuro));
+  border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(94, 13, 37, .3);
+}
+.carta-buono p { margin: 0; }
+.carta-ristorante { font: 400 1.25rem "Young Serif", Georgia, serif; }
+.carta-tipo { font-size: .8rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #ffdbe3; }
+.carta-valore { margin: .6rem 0 !important; font: 400 clamp(2.4rem, 9vw, 3.6rem)/1.05 "Young Serif", Georgia, serif; }
+.carta-dedica { font-style: italic; }
+.carta-persone { color: #ffdbe3; }
+.carta-stato { margin-top: .5rem !important; padding: .35rem .7rem; justify-self: start; font-weight: 700; color: var(--melograno-scuro); background: var(--bianco); border-radius: 999px; }
+.carta-buono.non-valido { filter: grayscale(.85); }
+.codice-buono { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem; margin-bottom: 1rem; padding: 1rem; background: var(--bianco); border-radius: 8px; }
+.codice-buono img { width: 168px; height: 168px; image-rendering: pixelated; }
+.codice-grande { margin: .3rem 0; font: 400 2rem "Young Serif", Georgia, serif; letter-spacing: .08em; }
+
+/* Sondaggio */
+.sondaggio h1 { margin-bottom: .5rem; }
+.domanda { margin: 0 0 1.25rem; }
+.domanda legend { font: 600 1rem "Instrument Sans", system-ui, sans-serif; margin-bottom: .35rem; }
+.stelle { display: flex; gap: .25rem; }
+.stella { width: 2.8rem; height: 2.8rem; font-size: 1.7rem; line-height: 1; color: var(--linea); background: var(--bianco); border: 1px solid var(--linea); border-radius: 6px; }
+.stella.piena { color: var(--ocra); border-color: var(--ocra); }
+.scala-dieci { display: grid; grid-template-columns: repeat(11, 1fr); gap: .2rem; }
+.voto-numero { padding: .55rem 0; font-weight: 700; background: var(--bianco); border: 1px solid var(--linea); border-radius: 4px; }
+.voto-numero[aria-checked="true"] { color: var(--bianco); background: var(--bottiglia); border-color: var(--bottiglia); }
+.estremi { display: flex; justify-content: space-between; margin: .3rem 0 0; font-size: .85rem; color: var(--grigio); }
+.sondaggio .azione { margin-top: 1rem; }
+
+@media (max-width: 900px) {
+  .layout-ordina { grid-template-columns: 1fr; }
+  .pannello-ordine { position: static; }
+  .barra-totale:not([hidden]) {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .7rem 16px;
+    font-weight: 700;
+    background: var(--bianco);
+    border-top: 1px solid var(--linea);
+    box-shadow: 0 -6px 20px rgba(22, 53, 45, .12);
+  }
+  .barra-totale .azione { width: auto; padding: .6rem 1rem; text-decoration: none; }
+}
+@media (max-width: 480px) {
+  .pannello-ordine .campi { grid-template-columns: 1fr; }
+  .piatto-ordine { grid-template-columns: 1fr auto; }
+  .piatto-ordine .stepper { grid-column: 1 / -1; justify-content: flex-end; }
+  .scala-dieci { grid-template-columns: repeat(6, 1fr); }
+}

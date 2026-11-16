@@ -1,5 +1,5 @@
 import { CANALI, inviaConferma, tokenPrenotazione, tokenValido } from "./notifiche.js";
-import { ALTRE_LINGUE, erroreIn, linguaRichiesta } from "./lingue.js";
+import { ALTRE_LINGUE, LINGUE, erroreIn, linguaRichiesta, modelloIn } from "./lingue.js";
 import {
   calcolaDisponibilita,
   candidati,
@@ -55,6 +55,11 @@ export async function infoRistorante(env) {
     chiusure: chiusure.results.map((c) => c.data),
     logo: versione("logo"),
     foto: versione("foto"),
+    moduli: {
+      fidelity: imp.fidelity_attiva ? { punti_visita: imp.punti_visita, soglia: imp.premio_soglia, premio: Object.fromEntries(LINGUE.map((l) => [l, modelloIn(imp, "premio_descrizione", l)])) } : null,
+      gift: Boolean(imp.gift_attive),
+      ordini: Boolean(imp.ordini_attivi && (imp.asporto_attivo || imp.consegna_attiva)),
+    },
     oggi,
   });
 }
@@ -125,7 +130,7 @@ export async function nuovaPrenotazione(request, env, ctx) {
     note,
     stato: imp.conferma_automatica ? "confermata" : "in_attesa",
     origine: "online",
-    cliente_id: await trovaOCreaCliente(env, { nome, telefono, email, lingua, marketing: corpo.marketing === true }),
+    cliente_id: await trovaOCreaCliente(env, { nome, telefono, email, lingua, marketing: corpo.marketing === true, fidelity: corpo.fidelity === true && Boolean(imp.fidelity_attiva) }),
     sconto: slot.sconto,
     canale,
     lingua,
@@ -141,7 +146,7 @@ export async function nuovaPrenotazione(request, env, ctx) {
 async function prenotazioneConToken(request, env, id) {
   const token = request.headers.get("x-prenotazione-token") ?? "";
   const p = await env.DB.prepare(
-    `SELECT id, codice, token_hash, data, ora, inizio_min, persone, nome, occasione, note, stato, sconto, lingua
+    `SELECT id, codice, token_hash, data, ora, inizio_min, persone, nome, occasione, note, stato, sconto, lingua, cliente_id
      FROM prenotazioni_v2 WHERE id = ?`,
   )
     .bind(id)
@@ -161,7 +166,17 @@ function annullabile(p) {
 export async function leggiPrenotazione(request, env, id) {
   const p = await prenotazioneConToken(request, env, id);
   const imp = await leggiImpostazioni(env);
+  let fidelity = null;
+  if (imp.fidelity_attiva && p.cliente_id) {
+    const c = await env.DB.prepare(
+      "SELECT c.fidelity, (SELECT COALESCE(SUM(punti), 0) FROM punti_movimenti WHERE cliente_id = c.id) AS saldo FROM clienti c WHERE c.id = ?",
+    )
+      .bind(p.cliente_id)
+      .first();
+    if (c?.fidelity) fidelity = { saldo: c.saldo, soglia: imp.premio_soglia };
+  }
   return json({
+    fidelity,
     codice: p.codice,
     data: p.data,
     ora: p.ora,

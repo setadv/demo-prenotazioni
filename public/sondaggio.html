@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Com'è andata?</title>
+  <link rel="stylesheet" href="/stile.css">
+</head>
+<body class="sala">
+  <main class="scheda">
+    <div id="scelta-lingua" class="scelta-lingua chiara"></div>
+    <p id="caricamento" class="stato" data-t="carico_prenotazione">Carico.</p>
+    <p id="errore" class="messaggio" role="alert" hidden></p>
+    <form id="modulo" class="sondaggio" novalidate hidden>
+      <h1 id="titolo"></h1>
+      <p id="intro"></p>
+      <div id="domande"></div>
+      <fieldset class="domanda">
+        <legend id="q-consiglio"></legend>
+        <div id="scala" class="scala-dieci" role="radiogroup"></div>
+        <p class="estremi"><span data-t="consiglio_basso">Per niente</span><span data-t="consiglio_alto">Sicuramente</span></p>
+      </fieldset>
+      <label><span data-t="q_commento">Vuoi dirci altro? (facoltativo)</span><textarea name="commento" rows="3" maxlength="1000"></textarea></label>
+      <p id="messaggio" class="messaggio" role="alert" hidden></p>
+      <button class="azione" type="submit" data-t="invia_risposte">Invia le risposte</button>
+    </form>
+    <section id="grazie" class="conferma" hidden tabindex="-1">
+      <h1 data-t="grazie">Grazie!</h1>
+      <p data-t="grazie_testo">Le tue risposte ci aiutano a migliorare.</p>
+      <div id="recensione" hidden>
+        <p data-t="invito_recensione"></p>
+        <a id="link-recensione" class="azione cta-menu" target="_blank" rel="noopener" data-t="scrivi_recensione">Scrivi una recensione</a>
+      </div>
+    </section>
+  </main>
+  <script src="/sondaggio.js" type="module"></script>
+</body>
+</html>

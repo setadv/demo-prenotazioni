@@ -163,6 +163,23 @@ const NUMERICHE = new Set([
   "conferma_automatica",
   "recensioni_automatiche",
   "recensione_dopo_ore",
+  "fidelity_attiva",
+  "punti_visita",
+  "punti_euro",
+  "premio_soglia",
+  "premio_validita_giorni",
+  "gift_attive",
+  "gift_validita_mesi",
+  "sondaggio_attivo",
+  "ordini_attivi",
+  "asporto_attivo",
+  "consegna_attiva",
+  "ordini_preparazione",
+  "ordini_max_fascia",
+  "consegna_costo",
+  "consegna_minimo",
+  "consegna_gratis_da",
+  "pagamento_alla_consegna",
 ]);
 
 export async function leggiImpostazioni(env) {

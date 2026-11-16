@@ -1,4 +1,5 @@
 import { candidati, caricaGiorno, inserisciPrenotazione, trovaOCreaCliente } from "./disponibilita.js";
+import { accreditaPunti, stornaPunti } from "./fidelity.js";
 import { ALTRE_LINGUE, LINGUE } from "./lingue.js";
 import {
   CANALI,
@@ -7,6 +8,7 @@ import {
   componiMessaggio,
   elaboraRecensioni,
   inviaConferma,
+  messaggioDopoVisita,
   linkPrenotazione,
   registraInvioManuale,
 } from "./notifiche.js";
@@ -50,10 +52,18 @@ function richiediData(valore) {
 export async function agenda(url, env, ctx) {
   const data = richiediData(url.searchParams.get("data"));
   // Le richieste di recensione partono anche da qui: funzionano pure dove il Cron Trigger non gira (Preview).
-  ctx?.waitUntil(elaboraRecensioni(env));
+  ctx?.waitUntil(elaboraRecensioni(env, url.origin));
+  // L'indirizzo del sito serve ai messaggi che partono dal Cron Trigger, dove la richiesta non c'è.
+  ctx?.waitUntil(
+    env.DB.prepare("INSERT INTO impostazioni (chiave, valore) VALUES ('url_sito', ?1) ON CONFLICT (chiave) DO UPDATE SET valore = ?1 WHERE valore <> ?1")
+      .bind(url.origin)
+      .run(),
+  );
   const [prenotazioni, tavoli, sale] = await env.DB.batch([
     env.DB.prepare(
-      `SELECT ${CAMPI_PRENOTAZIONE}, t.nome AS tavolo, c.note AS note_cliente, c.etichette, c.compleanno,
+      `SELECT ${CAMPI_PRENOTAZIONE}, t.nome AS tavolo, c.note AS note_cliente, c.etichette, c.compleanno, c.fidelity,
+         (SELECT COALESCE(SUM(m.punti), 0) FROM punti_movimenti m WHERE m.cliente_id = p.cliente_id) AS punti,
+         (SELECT COUNT(*) FROM premi r WHERE r.cliente_id = p.cliente_id AND r.stato = 'attivo' AND r.scade_il >= p.data) AS premi_attivi,
          (SELECT COUNT(*) FROM prenotazioni_v2 x WHERE x.cliente_id = p.cliente_id AND x.stato = 'arrivata' AND x.id <> p.id) AS visite,
          (SELECT COUNT(*) FROM prenotazioni_v2 x WHERE x.cliente_id = p.cliente_id AND x.stato = 'no_show' AND x.id <> p.id) AS no_show,
          (SELECT n.esito || '|' || n.canale || '|' || n.dettaglio FROM notifiche n
@@ -77,7 +87,7 @@ export async function agenda(url, env, ctx) {
     prenotazioni.results.map(async (p) => {
       const contattabile = Boolean(p.telefono || p.email);
       const conMessaggio = p.stato === "confermata" && contattabile;
-      const conRecensione = p.stato === "arrivata" && contattabile && Boolean(imp.link_recensioni);
+      const dopoVisita = p.stato === "arrivata" && contattabile ? await messaggioDopoVisita(env, imp, p, url.origin) : null;
       return {
         ...p,
         etichette: p.etichette ? p.etichette.split(",") : [],
@@ -86,7 +96,9 @@ export async function agenda(url, env, ctx) {
         messaggio: conMessaggio
           ? componiMessaggio("conferma", imp, p, { link: await linkPrenotazione(env, url.origin, p.id, p.lingua) })
           : null,
-        messaggio_recensione: conRecensione ? componiMessaggio("recensione", imp, p) : null,
+        fidelity: Boolean(p.fidelity),
+        messaggio_recensione: dopoVisita?.testo ?? null,
+        tipo_dopo_visita: dopoVisita?.tipo ?? null,
       };
     }),
   );
@@ -155,7 +167,21 @@ export async function nuovaPrenotazioneGestore(request, env, ctx) {
   if (riga.stato === "confermata" && (telefono || email)) {
     ctx.waitUntil(inviaConferma(env, imp, riga, new URL(request.url).origin));
   }
+  if (riga.stato === "arrivata") ctx.waitUntil(puntiVisita(env, riga, new URL(request.url).origin));
   return json({ id: riga.id, codice: riga.codice, tavolo_id: tavolo || null }, 201);
+}
+
+/** Punti fedeltà per una visita: una sola volta per prenotazione. */
+async function puntiVisita(env, p, origine) {
+  const imp = await leggiImpostazioni(env);
+  await accreditaPunti(env, {
+    clienteId: p.cliente_id,
+    punti: imp.punti_visita,
+    motivo: `Visita ${p.codice}`,
+    riferimento: `visita:${p.id}`,
+    origine,
+    canale: p.canale,
+  });
 }
 
 export async function modificaPrenotazione(request, env, id, ctx) {
@@ -195,6 +221,10 @@ export async function modificaPrenotazione(request, env, id, ctx) {
       .first();
     if (p.telefono || p.email) ctx.waitUntil(inviaConferma(env, await leggiImpostazioni(env), p, new URL(request.url).origin));
   }
+  if (stato === "arrivata" && attuale.stato !== "arrivata") {
+    const p = await env.DB.prepare("SELECT id, codice, cliente_id, canale FROM prenotazioni_v2 WHERE id = ?").bind(id).first();
+    ctx.waitUntil(puntiVisita(env, p, new URL(request.url).origin));
+  } else if (attuale.stato === "arrivata" && stato !== "arrivata") ctx.waitUntil(stornaPunti(env, `visita:${id}`));
   return json({ ok: true, stato, tavolo_id: tavolo });
 }
 

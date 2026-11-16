@@ -36,7 +36,7 @@ async function caricaMenu(env) {
   const [categorie, piatti] = await env.DB.batch([
     env.DB.prepare("SELECT id, nome, traduzioni FROM menu_categorie ORDER BY ordine, nome"),
     env.DB.prepare(
-      "SELECT id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile FROM menu_piatti ORDER BY ordine, nome",
+      "SELECT id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile, asporto FROM menu_piatti ORDER BY ordine, nome",
     ),
   ]);
   return categorie.results.map((c) => ({
@@ -54,6 +54,7 @@ async function caricaMenu(env) {
         tag: p.tag ? p.tag.split(",") : [],
         traduzioni: leggiTraduzioni(p.traduzioni),
         disponibile: Boolean(p.disponibile),
+        asporto: Boolean(p.asporto),
       })),
   }));
 }
@@ -137,6 +138,7 @@ export async function salvaMenu(request, env) {
         tag: TAG.filter((t) => tag.includes(t)).join(","),
         traduzioni: traduzioniValide(p.traduzioni, [["nome", 80], ["descrizione", 300]]),
         disponibile: p.disponibile === false ? 0 : 1,
+        asporto: p.asporto === false ? 0 : 1,
         ordine: j,
       });
     });
@@ -154,9 +156,9 @@ export async function salvaMenu(request, env) {
     ),
     ...piatti.map((p) =>
       env.DB.prepare(
-        `INSERT INTO menu_piatti (id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile, ordine)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(p.id, p.categoria_id, p.nome, p.descrizione, p.prezzo, p.allergeni, p.tag, JSON.stringify(p.traduzioni), p.disponibile, p.ordine),
+        `INSERT INTO menu_piatti (id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile, asporto, ordine)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(p.id, p.categoria_id, p.nome, p.descrizione, p.prezzo, p.allergeni, p.tag, JSON.stringify(p.traduzioni), p.disponibile, p.asporto, p.ordine),
     ),
     ...note.map(([k, v]) =>
       env.DB.prepare("INSERT INTO impostazioni (chiave, valore) VALUES (?1, ?2) ON CONFLICT (chiave) DO UPDATE SET valore = ?2").bind(k, v),
@@ -170,10 +172,17 @@ export async function salvaMenu(request, env) {
  * Codifica solo indirizzi del sito stesso, così non diventa un generatore di QR per altri.
  */
 export async function qrCode(url, env) {
-  const pagina = url.searchParams.get("pagina") === "prenota" ? "prenota" : "menu";
+  const codiceBuono = url.searchParams.get("codice");
+  if (codiceBuono) {
+    // Il QR di un buono contiene solo il codice, da leggere alla cassa: non è un link.
+    if (!/^(GC|PR)-[A-Z0-9]{6}$/.test(codiceBuono)) throw new ErroreRichiesta("Codice non valido.");
+    return rispostaQr(codiceBuono, codiceBuono, url);
+  }
+  const PAGINE = { prenota: "/", ordina: "/ordina", regalo: "/regalo", menu: "/menu" };
+  const pagina = PAGINE[url.searchParams.get("pagina")] ? url.searchParams.get("pagina") : "menu";
   const t = url.searchParams.get("t");
-  let destinazione = pagina === "prenota" ? `${url.origin}/` : `${url.origin}/menu`;
-  let nomeFile = pagina === "prenota" ? "qr-prenota" : "qr-menu";
+  let destinazione = `${url.origin}${PAGINE[pagina]}`;
+  let nomeFile = `qr-${pagina}`;
   if (pagina === "menu" && t) {
     if (!ID.test(t)) throw new ErroreRichiesta("Tavolo non valido.");
     const tavolo = await env.DB.prepare("SELECT nome FROM tavoli WHERE id = ? AND attivo = 1").bind(t).first();
@@ -181,6 +190,10 @@ export async function qrCode(url, env) {
     destinazione += `?t=${encodeURIComponent(t)}`;
     nomeFile += `-tavolo-${tavolo.nome.replace(/[^\w-]/g, "")}`;
   }
+  return rispostaQr(destinazione, nomeFile, url);
+}
+
+function rispostaQr(destinazione, nomeFile, url) {
   const qr = qrcode(0, "M");
   qr.addData(destinazione);
   qr.make();

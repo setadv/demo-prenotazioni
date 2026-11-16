@@ -17,6 +17,7 @@
       <p id="indirizzo"></p>
       <p id="prezzo"></p>
       <a class="link-menu apri-menu" href="/menu" target="_blank" rel="noopener" data-t="vedi_menu">Guarda il menù</a>
+      <p id="link-moduli" class="link-moduli"></p>
     </div>
     <img id="foto" class="foto" alt="La sala del ristorante" hidden>
     <p id="descrizione" class="descrizione"></p>
@@ -82,6 +83,10 @@
           <label class="spunta largo">
             <input type="checkbox" name="privacy" required>
             <span data-t="privacy">Accetto che i miei dati siano usati solo per gestire questa prenotazione.</span>
+          </label>
+          <label id="riga-fidelity" class="spunta largo" hidden>
+            <input type="checkbox" name="fidelity">
+            <span id="testo-fidelity"></span>
           </label>
           <label class="spunta largo">
             <input type="checkbox" name="marketing">

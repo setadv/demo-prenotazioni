@@ -545,3 +545,74 @@ label.piccola, legend.piccola { font-size: .85rem; color: var(--grigio); font-we
   .cifre-cliente { grid-template-columns: 1fr 1fr; }
   .modulo-piatto .campi { grid-template-columns: 1fr; }
 }
+
+/* Impostazioni dei moduli, apribili */
+.impostazioni-modulo { margin-top: 1rem; }
+.impostazioni-modulo > summary { display: flex; align-items: center; gap: .5rem; cursor: pointer; list-style: none; }
+.impostazioni-modulo > summary::-webkit-details-marker { display: none; }
+.impostazioni-modulo > summary::before { content: "▸"; color: var(--grigio); transition: transform .15s; }
+.impostazioni-modulo[open] > summary::before { transform: rotate(90deg); }
+.impostazioni-modulo > summary h2 { margin: 0; }
+.impostazioni-modulo > form { margin-top: 1rem; }
+
+/* Ordini */
+.elenco-ordini .turno h2 small { margin-left: .5rem; }
+.ordine-scheda { margin-bottom: .6rem; padding: .9rem 1rem; background: var(--bianco); border-left: 4px solid var(--ocra); border-radius: 4px; }
+.ordine-scheda[data-stato="in_preparazione"], .ordine-scheda[data-stato="pronto"], .ordine-scheda[data-stato="in_consegna"] { border-left-color: var(--melograno); }
+.ordine-scheda[data-stato="completato"] { border-left-color: var(--verde); }
+.ordine-scheda[data-stato="annullato"] { border-left-color: var(--linea); color: var(--grigio); }
+.ordine-scheda.appena-arrivato { animation: lampeggia 1.2s ease-in-out 3; }
+@keyframes lampeggia { 50% { background: var(--ocra-chiaro); } }
+.ordine-testa { display: grid; grid-template-columns: 4rem 1fr auto; gap: .75rem; align-items: start; }
+.ordine-testa p { margin: 0 0 .2rem; }
+.ordine-ora { font: 400 1.6rem/1.1 "Young Serif", Georgia, serif; }
+.ordine-totale { font: 400 1.3rem "Young Serif", Georgia, serif; }
+.indirizzo-ordine { font-weight: 600; }
+.righe-ordine { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: .5rem 0; padding: 0 0 0 4.75rem; list-style: none; }
+.ordine-azioni { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .5rem; padding-left: 4.75rem; }
+.ordine-scheda .messaggi { padding-left: 4.75rem; }
+.badge-stato.ordine-nuovo { background: var(--ocra-chiaro); color: #6b4a00; }
+.badge-stato.ordine-in_preparazione, .badge-stato.ordine-pronto, .badge-stato.ordine-in_consegna { background: var(--rosa-chiaro); color: var(--melograno-scuro); }
+.badge-stato.ordine-completato { background: #dcefe5; color: #1d5c42; }
+
+/* Fidelity e gift card */
+.verifica-codice .riga-input { max-width: 520px; }
+.verifica-codice input { text-transform: uppercase; }
+.esito { margin-top: .9rem; padding: .9rem 1rem; border-radius: 6px; }
+.esito p { margin: 0 0 .35rem; }
+.esito.valido { background: #e2f2ea; }
+.esito.non-valido { background: var(--rosa-chiaro); }
+.esito .riga-input { max-width: 360px; margin-top: .5rem; }
+.saldo-grande { font: 400 1.6rem "Young Serif", Georgia, serif; }
+.lista-premi { display: grid; gap: .4rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.lista-premi li { padding: .6rem .8rem; background: var(--celadon); border-radius: 4px; }
+.lista-premi li p { margin: 0 0 .25rem; }
+.lista-premi li.scaduto { opacity: .6; }
+.lista-premi .etichetta { margin-left: .4rem; }
+.blocco h3 { margin: 1.25rem 0 .5rem; font-size: 1.15rem; }
+.classifica { margin: .5rem 0 0; padding-left: 1.4rem; }
+
+/* Sondaggi */
+.cifre dd small { font-size: 1rem; color: var(--grigio); }
+.barra-voto { display: block; height: 6px; margin-top: .4rem; background: linear-gradient(90deg, var(--ocra) var(--valore), var(--celadon-scuro) var(--valore)); border-radius: 3px; }
+.titolo-sezione-piccolo { margin: 1.5rem 0 .6rem; font-size: 1.4rem; }
+.risposta h3 { margin: 0; font-size: 1.15rem; }
+.risposta.critica { border-left: 4px solid var(--melograno); }
+.voti { display: flex; flex-wrap: wrap; gap: .2rem 1rem; font-size: .92rem; }
+.voti span { color: var(--ocra); }
+.voti span.basso { color: var(--melograno); font-weight: 700; }
+.commento { margin: .4rem 0; padding: .5rem .8rem; font-style: italic; background: var(--celadon); border-left: 3px solid var(--linea); }
+
+@media print {
+  body.stampa-qr .comanda { display: block; grid-column: 1 / -1; font: 12pt/1.4 ui-monospace, monospace; color: #000; }
+  .comanda p { margin: 0 0 2mm; }
+  .comanda-titolo { font-size: 18pt; font-weight: 700; }
+  .comanda-totale { margin-top: 4mm !important; font-weight: 700; }
+}
+@media (max-width: 640px) {
+  .ordine-testa { grid-template-columns: 3.2rem 1fr; }
+  .ordine-totale { grid-column: 2; }
+  .righe-ordine, .ordine-azioni, .ordine-scheda .messaggi { padding-left: 0; }
+}
+
+.testata-vista + .legenda + .filtri { margin: .75rem 0 1rem; }
