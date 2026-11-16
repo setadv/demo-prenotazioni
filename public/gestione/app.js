@@ -1,4 +1,5 @@
-import { $, api, avviso } from "./comune.js";
+import { $, api, avviso, corrente } from "./comune.js";
+import { vistaAccount } from "./account.js";
 import { vistaAgenda } from "./agenda.js";
 import { vistaSala } from "./sala.js";
 import { vistaMappa } from "./mappa.js";
@@ -21,6 +22,7 @@ const VISTE = {
   sondaggi: vistaSondaggi,
   statistiche: vistaStatistiche,
   impostazioni: vistaImpostazioni,
+  account: vistaAccount,
 };
 const TITOLI = {
   agenda: "Agenda",
@@ -33,7 +35,49 @@ const TITOLI = {
   sondaggi: "Sondaggi",
   statistiche: "Statistiche",
   impostazioni: "Impostazioni",
+  account: "Account",
 };
+
+/** Viste visibili: dipendono dal ruolo e dalle funzioni incluse nel piano del ristorante. */
+function visibile(nome) {
+  const s = sessione;
+  if (!s) return false;
+  const moduli = new Set(s.ristorante?.moduli ?? []);
+  const ruolo = s.utente?.ruolo ?? "titolare";
+  if (nome === "ordini") return moduli.has("ordini");
+  if (nome === "fidelity") return moduli.has("fidelity") || moduli.has("gift");
+  if (nome === "sondaggi") return moduli.has("sondaggi");
+  if (nome === "mappa" || nome === "impostazioni") return ruolo === "titolare";
+  return true;
+}
+
+const STATI_ACCOUNT = {
+  prova_scaduta: "Il periodo di prova è finito: i clienti non possono più prenotare online. Puoi consultare i dati; per continuare contatta l'assistenza.",
+  sospeso: "L'account è sospeso: i clienti non possono prenotare online e il pannello è in sola consultazione.",
+  disattivato: "L'account è disattivato.",
+};
+
+function banda() {
+  const el = $("stato-account");
+  const r = sessione.ristorante ?? {};
+  let testo = "";
+  let tipo = "info";
+  if (sessione.assistenza) {
+    testo = `Sei nel pannello di ${sessione.nome} come assistenza. Ogni accesso è registrato.`;
+    tipo = "assistenza";
+  } else if (STATI_ACCOUNT[r.stato]) {
+    testo = `${STATI_ACCOUNT[r.stato]}${r.motivo ? ` Motivo: ${r.motivo}` : ""}`;
+    tipo = "allerta";
+  } else if (r.stato === "prova" && r.prova_fino) {
+    const giorni = Math.round((Date.parse(`${r.prova_fino}T12:00:00Z`) - Date.parse(`${new Date().toISOString().slice(0, 10)}T12:00:00Z`)) / 86400000);
+    testo = giorni > 0 ? `Periodo di prova: ${giorni === 1 ? "manca 1 giorno" : `mancano ${giorni} giorni`}.` : "Il periodo di prova finisce oggi.";
+  } else if (sessione.utente?.ruolo === "lettura") {
+    testo = "Accesso in sola lettura: puoi consultare ma non modificare.";
+  }
+  el.textContent = testo;
+  el.dataset.tipo = tipo;
+  el.hidden = !testo;
+}
 
 let sessione = null;
 let vistaCorrente = null;
@@ -46,7 +90,8 @@ function mostraAccesso() {
 }
 
 async function apriVista() {
-  const nome = VISTE[location.hash.slice(1)] ? location.hash.slice(1) : "agenda";
+  const richiesta = location.hash.slice(1);
+  const nome = VISTE[richiesta] && visibile(richiesta) ? richiesta : "agenda";
   if (vistaCorrente && vistaCorrente.nome !== nome && vistaCorrente.esci && !vistaCorrente.esci(nome)) {
     history.replaceState(null, "", `#${vistaCorrente.nome}`);
     return;
@@ -63,6 +108,12 @@ async function apriVista() {
 
 async function avvia() {
   sessione = await api("/api/admin/sessione");
+  corrente.sessione = sessione;
+  document.querySelectorAll(".menu a").forEach((a) => {
+    a.hidden = !visibile(a.dataset.vista);
+  });
+  banda();
+  document.body.classList.toggle("sola-lettura", sessione.utente?.ruolo === "lettura");
   $("accesso").hidden = true;
   $("pannello").hidden = false;
   $("nome-locale").textContent = sessione.nome;
@@ -85,7 +136,8 @@ $("login").addEventListener("submit", async (evento) => {
   const errore = $("errore-login");
   errore.hidden = true;
   try {
-    await api("/api/admin/login", { metodo: "POST", corpo: { password: new FormData(evento.target).get("password") } });
+    const dati = new FormData(evento.target);
+    await api("/api/admin/login", { metodo: "POST", corpo: { email: dati.get("email") || undefined, password: dati.get("password") } });
     evento.target.reset();
     await avvia();
   } catch (e) {
@@ -97,6 +149,7 @@ $("login").addEventListener("submit", async (evento) => {
 $("esci").addEventListener("click", async () => {
   await api("/api/admin/logout", { metodo: "POST" }).catch(() => {});
   sessione = null;
+  corrente.sessione = null;
   vistaCorrente = null;
   mostraAccesso();
 });

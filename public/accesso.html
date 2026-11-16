@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Accesso al pannello</title>
+  <link rel="stylesheet" href="/stile.css">
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body class="gestore">
+  <section class="accesso">
+    <div id="imposta" hidden>
+      <h1>Scegli la password</h1>
+      <p class="legenda">Almeno 10 caratteri. Una frase di tre o quattro parole è facile da ricordare e difficile da indovinare.</p>
+      <form id="form-imposta">
+        <label>Nuova password
+          <input type="password" name="password" autocomplete="new-password" minlength="10" required>
+        </label>
+        <label>Ripeti la password
+          <input type="password" name="ripeti" autocomplete="new-password" minlength="10" required>
+        </label>
+        <p id="errore-imposta" class="messaggio" role="alert" hidden></p>
+        <button class="azione" type="submit">Salva e accedi</button>
+      </form>
+    </div>
+    <div id="recupera" hidden>
+      <h1>Password dimenticata</h1>
+      <p class="legenda">Scrivi l'email con cui accedi: ti mandiamo un link per sceglierne una nuova. Il link vale 2 ore.</p>
+      <form id="form-recupera">
+        <label>Email
+          <input type="email" name="email" autocomplete="username" required>
+        </label>
+        <p id="errore-recupera" class="messaggio" role="alert" hidden></p>
+        <button class="azione" type="submit">Mandami il link</button>
+      </form>
+    </div>
+    <div id="fatto" hidden>
+      <h1 id="titolo-fatto">Fatto</h1>
+      <p id="testo-fatto"></p>
+      <a id="vai" class="azione pulsante-link" href="/admin">Vai al pannello</a>
+    </div>
+    <p><a href="/admin">Torna all'accesso</a></p>
+  </section>
+  <script src="/accesso.js" type="module"></script>
+</body>
+</html>

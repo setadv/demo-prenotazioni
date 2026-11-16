@@ -1,4 +1,4 @@
-import { $, api, avviso, campoData, condiviso, h, testoData } from "./comune.js";
+import { $, api, avviso, campoData, condiviso, h, testoData, paginaPubblica } from "./comune.js";
 import { impostazioniModulo, pulsantiInvio } from "./moduli.js";
 
 const euro = (c) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(c / 100);
@@ -156,7 +156,7 @@ export async function vistaOrdini(contenitore) {
     const arrivati = new Set(nuovi.map((o) => o.id).filter((id) => ultimi.size && !ultimi.has(id)));
     ultimi = new Set(ordini.map((o) => o.id));
     if (!ordini.length) {
-      elenco.replaceChildren(h("div", { class: "vuoto" }, h("p", {}, "Nessun ordine in questo giorno."), h("p", {}, "I clienti ordinano dalla pagina ", h("a", { href: "/ordina", target: "_blank", rel: "noopener" }, "Ordina"), ".")));
+      elenco.replaceChildren(h("div", { class: "vuoto" }, h("p", {}, "Nessun ordine in questo giorno."), h("p", {}, "I clienti ordinano dalla pagina ", h("a", { href: paginaPubblica("/ordina"), target: "_blank", rel: "noopener" }, "Ordina"), ".")));
       return;
     }
     const gruppi = [
@@ -191,7 +191,7 @@ export async function vistaOrdini(contenitore) {
   });
 
   contenitore.append(
-    h("div", { class: "testata-vista" }, h("h1", {}, "Ordini"), h("div", { class: "pulsanti-testata" }, h("a", { class: "secondario pulsante-link", href: "/ordina", target: "_blank", rel: "noopener" }, "Apri la pagina degli ordini"))),
+    h("div", { class: "testata-vista" }, h("h1", {}, "Ordini"), h("div", { class: "pulsanti-testata" }, h("a", { class: "secondario pulsante-link", href: paginaPubblica("/ordina"), target: "_blank", rel: "noopener" }, "Apri la pagina degli ordini"))),
     h("p", { class: "legenda" }, "Asporto e consegna dal tuo sito, senza commissioni di piattaforma. I piatti ordinabili si scelgono nel Menù. Questa pagina si aggiorna da sola ogni 30 secondi."),
     h("div", { class: "strumenti" }, campoData(carica)),
     riepilogo,

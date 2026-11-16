@@ -1,3 +1,4 @@
+import { linkPubblico } from "./ristoranti.js";
 import { accreditaPunti, stornaPunti } from "./fidelity.js";
 import { attivaGift } from "./buoni.js";
 import { slotDelGiorno, trovaOCreaCliente } from "./disponibilita.js";
@@ -35,7 +36,7 @@ const trentaMinutiFa = () => new Date(Date.now() - 30 * 60000).toISOString();
 
 export async function linkOrdine(env, origine, id, lingua = "it") {
   const l = lingua !== "it" ? `&l=${lingua}` : "";
-  return `${origine}/ordine#id=${id}&t=${await tokenPer(env, "ordine", id)}${l}`;
+  return linkPubblico(env, "/ordine", { origine, frammento: `id=${id}&t=${await tokenPer(env, "ordine", id)}${l}` });
 }
 
 function metodiPagamento(env, imp) {
@@ -48,8 +49,8 @@ export async function infoOrdini(env) {
   const attivi = Boolean(imp.ordini_attivi) && (imp.asporto_attivo || imp.consegna_attiva) && (pagamenti.alla_consegna || pagamenti.online);
   const oggi = oraRoma().data;
   const [orari, chiusure] = await env.DB.batch([
-    env.DB.prepare("SELECT DISTINCT giorno FROM orari"),
-    env.DB.prepare("SELECT data FROM chiusure WHERE data BETWEEN ? AND ?").bind(oggi, spostaData(oggi, GIORNI_ORDINABILI - 1)),
+    env.DB.prepare("SELECT DISTINCT giorno FROM orari WHERE ristorante_id = ?").bind(env.RID),
+    env.DB.prepare("SELECT data FROM chiusure_r WHERE ristorante_id = ? AND data BETWEEN ? AND ?").bind(env.RID, oggi, spostaData(oggi, GIORNI_ORDINABILI - 1)),
   ]);
   const aperti = new Set(orari.results.map((o) => o.giorno));
   const chiusi = new Set(chiusure.results.map((c) => c.data));
@@ -80,9 +81,9 @@ async function fasceLibere(env, imp, data) {
   const distanza = Math.round((Date.parse(`${data}T00:00:00Z`) - Date.parse(`${oggi.data}T00:00:00Z`)) / 86400000);
   if (distanza < 0 || distanza >= GIORNI_ORDINABILI) return [];
   const [chiusura, orari, occupate] = await env.DB.batch([
-    env.DB.prepare("SELECT 1 FROM chiusure WHERE data = ?").bind(data),
-    env.DB.prepare("SELECT servizio, inizio, fine FROM orari WHERE giorno = ? ORDER BY inizio").bind(giornoSettimana(data)),
-    env.DB.prepare(`SELECT ora, COUNT(*) AS n FROM ordini WHERE data = ? AND ${OCCUPA} GROUP BY ora`).bind(data, trentaMinutiFa()),
+    env.DB.prepare("SELECT 1 FROM chiusure_r WHERE ristorante_id = ? AND data = ?").bind(env.RID, data),
+    env.DB.prepare("SELECT servizio, inizio, fine FROM orari WHERE ristorante_id = ? AND giorno = ? ORDER BY inizio").bind(env.RID, giornoSettimana(data)),
+    env.DB.prepare(`SELECT ora, COUNT(*) AS n FROM ordini WHERE ristorante_id = ? AND data = ? AND ${OCCUPA} GROUP BY ora`).bind(env.RID, data, trentaMinutiFa()),
   ]);
   if (chiusura.results.length) return [];
   const piene = new Map(occupate.results.map((o) => [o.ora, o.n]));
@@ -140,9 +141,9 @@ export async function nuovoOrdine(request, env) {
   if (corpo.righe.length > 50) throw errore("lungo");
   const ids = [...new Set(corpo.righe.map((r) => String(r.id ?? "")))];
   const { results: piatti } = await env.DB.prepare(
-    `SELECT id, nome, prezzo FROM menu_piatti WHERE disponibile = 1 AND asporto = 1 AND prezzo IS NOT NULL AND id IN (${ids.map(() => "?").join(",")})`,
+    `SELECT id, nome, prezzo FROM menu_piatti WHERE ristorante_id = ? AND disponibile = 1 AND asporto = 1 AND prezzo IS NOT NULL AND id IN (${ids.map(() => "?").join(",")})`,
   )
-    .bind(...ids)
+    .bind(env.RID, ...ids)
     .all();
   const perId = new Map(piatti.map((p) => [p.id, p]));
   const quantita = new Map();
@@ -175,13 +176,13 @@ export async function nuovoOrdine(request, env) {
   // Inserimento e controllo della fascia nella stessa istruzione: due ordini simultanei non superano il massimo.
   const inserito = await env.DB.prepare(
     `INSERT INTO ordini (id, codice, tipo, data, ora, nome, telefono, email, indirizzo, cap, note, subtotale, spese_consegna, totale,
-       pagamento, pagato, stato, cliente_id, lingua, canale, creato_il, aggiornato_il)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 0, ?16, ?17, ?18, ?19, ?20, ?20
-     WHERE (SELECT COUNT(*) FROM ordini WHERE data = ?4 AND ora = ?5 AND stato <> 'annullato'
+       pagamento, pagato, stato, cliente_id, lingua, canale, creato_il, aggiornato_il, ristorante_id)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 0, ?16, ?17, ?18, ?19, ?20, ?20, ?23
+     WHERE (SELECT COUNT(*) FROM ordini WHERE ristorante_id = ?23 AND data = ?4 AND ora = ?5 AND stato <> 'annullato'
             AND (stato <> 'in_attesa_pagamento' OR creato_il > ?21)) < ?22`,
   )
     .bind(id, codice, tipo, corpo.data, corpo.ora, nome, telefono, email, indirizzo, cap, note, subtotale, spese, totale, pagamento,
-      pagamento === "online" ? "in_attesa_pagamento" : "nuovo", clienteId, lingua, canale, adesso, trentaMinutiFa(), imp.ordini_max_fascia)
+      pagamento === "online" ? "in_attesa_pagamento" : "nuovo", clienteId, lingua, canale, adesso, trentaMinutiFa(), imp.ordini_max_fascia, env.RID)
     .run();
   if (!inserito.meta.changes) throw errore("fascia", {}, 409);
   await env.DB.batch(
@@ -200,14 +201,14 @@ export async function nuovoOrdine(request, env) {
         importo: totale,
         email,
         lingua,
-        successo: `${origine}/ordine?id=${id}&t=${token}&l=${lingua}`,
-        annullato: `${origine}/ordina?lang=${lingua}`,
-        metadati: { tipo: "ordine", id },
+        successo: linkPubblico(env, "/ordine", { origine, query: `id=${id}&t=${token}&l=${lingua}` }),
+        annullato: linkPubblico(env, "/ordina", { origine, query: `lang=${lingua}` }),
+        metadati: { tipo: "ordine", id, ristorante: env.RID },
       });
-      await env.DB.prepare("UPDATE ordini SET pagamento_id = ? WHERE id = ?").bind(p.id, id).run();
+      await env.DB.prepare("UPDATE ordini SET pagamento_id = ? WHERE id = ? AND ristorante_id = ?").bind(p.id, id, env.RID).run();
       return json({ id, codice, token, stato: "in_attesa_pagamento", url_pagamento: p.url }, 201);
     } catch (e) {
-      await env.DB.prepare("UPDATE ordini SET stato = 'annullato' WHERE id = ?").bind(id).run();
+      await env.DB.prepare("UPDATE ordini SET stato = 'annullato' WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).run();
       throw e;
     }
   }
@@ -240,9 +241,9 @@ export async function leggiOrdine(request, env, id) {
   const token = request.headers.get("x-ordine-token") ?? "";
   if (!(await tokenPerValido(env, "ordine", id, token))) throw new ErroreRichiesta(erroreIn(lingua, "non_trovato"), 404);
   const o = await env.DB.prepare(
-    "SELECT codice, tipo, data, ora, nome, indirizzo, cap, note, subtotale, spese_consegna, totale, pagamento, pagato, stato, lingua FROM ordini WHERE id = ?",
+    "SELECT codice, tipo, data, ora, nome, indirizzo, cap, note, subtotale, spese_consegna, totale, pagamento, pagato, stato, lingua FROM ordini WHERE id = ? AND ristorante_id = ?",
   )
-    .bind(id)
+    .bind(id, env.RID)
     .first();
   if (!o) throw new ErroreRichiesta(erroreIn(lingua, "non_trovato"), 404);
   const imp = await leggiImpostazioni(env);
@@ -270,9 +271,9 @@ export async function elencoOrdini(url, env) {
   if (!dataValida(data)) throw new ErroreRichiesta("Scegli una data valida.");
   const { results } = await env.DB.prepare(
     `SELECT o.*, (SELECT n.esito || '|' || n.canale FROM notifiche n WHERE n.prenotazione_id = o.id AND n.tipo = 'ordine' ORDER BY n.id DESC LIMIT 1) AS notifica
-     FROM ordini o WHERE o.data = ? AND o.stato <> 'in_attesa_pagamento' ORDER BY o.ora, o.creato_il`,
+     FROM ordini o WHERE o.ristorante_id = ? AND o.data = ? AND o.stato <> 'in_attesa_pagamento' ORDER BY o.ora, o.creato_il`,
   )
-    .bind(data)
+    .bind(env.RID, data)
     .all();
   const righe = await righeDi(env, results.map((o) => o.id));
   const imp = await leggiImpostazioni(env);
@@ -303,14 +304,14 @@ const PASSAGGI = {
 /** Cambio di stato dal pannello. All'accettazione parte la conferma; al completamento si accreditano i punti. */
 export async function modificaOrdine(request, env, id, ctx) {
   const corpo = await leggiJson(request);
-  const o = await env.DB.prepare("SELECT * FROM ordini WHERE id = ?").bind(id).first();
+  const o = await env.DB.prepare("SELECT * FROM ordini WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).first();
   if (!o) throw new ErroreRichiesta("Ordine non trovato.", 404);
   const stato = corpo.stato;
   if (!PASSAGGI[o.stato]?.includes(stato)) throw new ErroreRichiesta("Questo cambio di stato non è possibile.", 409);
   if (stato === "in_consegna" && o.tipo !== "consegna") throw new ErroreRichiesta("Solo gli ordini a domicilio vanno in consegna.", 409);
   if (stato === "pronto" && o.tipo !== "asporto") throw new ErroreRichiesta("Gli ordini a domicilio passano a In consegna.", 409);
-  const r = await env.DB.prepare("UPDATE ordini SET stato = ?, aggiornato_il = ? WHERE id = ? AND stato = ?")
-    .bind(stato, new Date().toISOString(), id, o.stato)
+  const r = await env.DB.prepare("UPDATE ordini SET stato = ?, aggiornato_il = ? WHERE id = ? AND ristorante_id = ? AND stato = ?")
+    .bind(stato, new Date().toISOString(), id, env.RID, o.stato)
     .run();
   if (!r.meta.changes) throw new ErroreRichiesta("L'ordine è appena cambiato. Ricarica la pagina.", 409);
   const origine = new URL(request.url).origin;
@@ -352,7 +353,7 @@ export async function modificaOrdine(request, env, id, ctx) {
 
 export async function segnaPagato(request, env, id) {
   const corpo = await leggiJson(request);
-  const r = await env.DB.prepare("UPDATE ordini SET pagato = ? WHERE id = ?").bind(corpo.pagato ? 1 : 0, id).run();
+  const r = await env.DB.prepare("UPDATE ordini SET pagato = ? WHERE id = ? AND ristorante_id = ?").bind(corpo.pagato ? 1 : 0, id, env.RID).run();
   if (!r.meta.changes) throw new ErroreRichiesta("Ordine non trovato.", 404);
   return json({ ok: true });
 }
@@ -360,6 +361,9 @@ export async function segnaPagato(request, env, id) {
 export async function notificaOrdineManuale(request, env, id) {
   const corpo = await leggiJson(request);
   if (!CANALI.includes(corpo.canale)) throw new ErroreRichiesta("Canale non valido.");
+  if (!(await env.DB.prepare("SELECT 1 FROM ordini WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).first())) {
+    throw new ErroreRichiesta("Ordine non trovato.", 404);
+  }
   await registraInvioManuale(env, id, corpo.canale, "ordine");
   return json({ ok: true });
 }
@@ -375,14 +379,14 @@ export async function webhookStripe(request, env) {
   if (evento.type === "checkout.session.completed" && sessione.payment_status === "paid") {
     if (tipo === "gift") await attivaGift(env, id, origine, sessione.id);
     if (tipo === "ordine") {
-      await env.DB.prepare("UPDATE ordini SET pagato = 1, stato = 'nuovo', aggiornato_il = ? WHERE id = ? AND stato IN ('in_attesa_pagamento', 'annullato')")
-        .bind(new Date().toISOString(), id)
+      await env.DB.prepare("UPDATE ordini SET pagato = 1, stato = 'nuovo', aggiornato_il = ? WHERE id = ? AND ristorante_id = ? AND stato IN ('in_attesa_pagamento', 'annullato')")
+        .bind(new Date().toISOString(), id, env.RID)
         .run();
     }
   }
   if (evento.type === "checkout.session.expired" && tipo === "ordine") {
-    await env.DB.prepare("UPDATE ordini SET stato = 'annullato', aggiornato_il = ? WHERE id = ? AND stato = 'in_attesa_pagamento'")
-      .bind(new Date().toISOString(), id)
+    await env.DB.prepare("UPDATE ordini SET stato = 'annullato', aggiornato_il = ? WHERE id = ? AND ristorante_id = ? AND stato = 'in_attesa_pagamento'")
+      .bind(new Date().toISOString(), id, env.RID)
       .run();
   }
   return json({ ricevuto: true });

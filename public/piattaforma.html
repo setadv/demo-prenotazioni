@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Piattaforma</title>
+  <link rel="stylesheet" href="/stile.css">
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body class="gestore piattaforma">
+  <section id="accesso" class="accesso" hidden>
+    <h1>Piattaforma</h1>
+    <p class="legenda">Area dell'amministratore: ristoranti, abbonamenti e accessi.</p>
+    <form id="login">
+      <label>Email
+        <input type="email" name="email" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <p id="errore-login" class="messaggio" role="alert" hidden></p>
+      <button class="azione" type="submit">Accedi</button>
+    </form>
+    <p class="link-accesso"><a href="/accesso#recupera">Password dimenticata?</a></p>
+  </section>
+
+  <div id="pannello" hidden>
+    <header class="barra">
+      <p class="nome-locale">Piattaforma</p>
+      <nav class="menu" aria-label="Sezioni della piattaforma">
+        <a href="#cruscotto" data-vista="cruscotto">Cruscotto</a>
+        <a href="#ristoranti" data-vista="ristoranti">Ristoranti</a>
+        <a href="#registro" data-vista="registro">Registro</a>
+        <a href="#amministratori" data-vista="amministratori">Amministratori</a>
+      </nav>
+      <span id="chi" class="chi"></span>
+      <button id="esci" class="esci" type="button">Esci</button>
+    </header>
+    <p id="ambiente" class="ambiente" hidden></p>
+    <p id="avviso" class="avviso-pannello" role="status" aria-live="polite"></p>
+    <main id="contenuto" class="contenuto"></main>
+  </div>
+
+  <dialog id="dialogo" class="dialogo"></dialog>
+  <script src="/piattaforma/app.js" type="module"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { api, apriDialogo, avviso, chiudiDialogo, h, testoData } from "./comune.js";
+import { api, apriDialogo, avviso, chiudiDialogo, h, testoData, paginaPubblica } from "./comune.js";
 import { impostazioniModulo, pulsantiInvio } from "./moduli.js";
 
 const euro = (c) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(c / 100);
@@ -147,7 +147,7 @@ export async function vistaFidelity(contenitore) {
         "p",
         { class: "legenda" },
         g.online ? "I clienti le comprano online con carta dalla pagina " : "Il pagamento online non è configurato: le vendi al ristorante e le emetti da qui. Pagina pubblica: ",
-        h("a", { href: "/regalo", target: "_blank", rel: "noopener" }, "Regala una gift card"),
+        h("a", { href: paginaPubblica("/regalo"), target: "_blank", rel: "noopener" }, "Regala una gift card"),
         ".",
       ),
       h(

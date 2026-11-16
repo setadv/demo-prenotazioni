@@ -39,7 +39,7 @@ export async function api(percorso, { metodo = "GET", corpo, grezzo = false } = 
   }
   const r = await fetch(percorso, opzioni);
   const dati = await r.json().catch(() => ({}));
-  if (r.status === 401 && percorso !== "/api/admin/login") {
+  if (r.status === 401 && !percorso.endsWith("/login")) {
     document.dispatchEvent(new CustomEvent("sessione-scaduta"));
   }
   if (!r.ok) throw new ErroreApi(dati.errore || "Operazione non riuscita. Riprova.", r.status);
@@ -136,3 +136,22 @@ export function numeroWhatsApp(tel) {
 export function etichettaTavolo(t) {
   return `${t.nome} (${t.posti_min === t.posti_max ? t.posti_max : `${t.posti_min}-${t.posti_max}`} posti)`;
 }
+
+/** Sessione corrente, condivisa tra le viste: utente, ruolo, ristorante e moduli del piano. */
+export const corrente = { sessione: null };
+
+/** Indirizzo di una pagina pubblica del ristorante (sottodominio, oppure questo sito con ?r=). */
+export function paginaPubblica(percorso) {
+  const indirizzo = corrente.sessione?.ristorante?.indirizzo;
+  if (!indirizzo) return percorso;
+  const u = new URL(indirizzo, location.origin);
+  u.pathname = percorso;
+  return u.href;
+}
+
+export const puo = (azione) => {
+  const ruolo = corrente.sessione?.utente?.ruolo ?? "titolare";
+  if (ruolo === "titolare") return true;
+  if (ruolo === "lettura") return false;
+  return !["configurare", "utenti", "esportare"].includes(azione);
+};

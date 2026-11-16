@@ -1,4 +1,4 @@
-import { $, api, apriDialogo, avviso, chiudiDialogo, h } from "./comune.js";
+import { $, api, apriDialogo, avviso, chiudiDialogo, h, paginaPubblica } from "./comune.js";
 
 const ALLERGENI = {
   glutine: "Glutine",
@@ -417,7 +417,7 @@ export async function vistaMenu(contenitore) {
       h(
         "div",
         { class: "pulsanti-testata" },
-        h("a", { class: "secondario pulsante-link", href: "/menu", target: "_blank", rel: "noopener" }, "Apri il menù"),
+        h("a", { class: "secondario pulsante-link", href: paginaPubblica("/menu"), target: "_blank", rel: "noopener" }, "Apri il menù"),
         h("button", { type: "button", class: "azione compatta", onclick: apriQr }, "QR code per i tavoli"),
       ),
     ),

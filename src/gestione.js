@@ -26,6 +26,7 @@ import {
   json,
   leggiImpostazioni,
   leggiJson,
+  salvaImpostazione,
   oraRoma,
   oraValida,
   spostaData,
@@ -55,9 +56,7 @@ export async function agenda(url, env, ctx) {
   ctx?.waitUntil(elaboraRecensioni(env, url.origin));
   // L'indirizzo del sito serve ai messaggi che partono dal Cron Trigger, dove la richiesta non c'è.
   ctx?.waitUntil(
-    env.DB.prepare("INSERT INTO impostazioni (chiave, valore) VALUES ('url_sito', ?1) ON CONFLICT (chiave) DO UPDATE SET valore = ?1 WHERE valore <> ?1")
-      .bind(url.origin)
-      .run(),
+    salvaImpostazione(env, "url_sito", url.origin).run(),
   );
   const [prenotazioni, tavoli, sale] = await env.DB.batch([
     env.DB.prepare(
@@ -73,14 +72,14 @@ export async function agenda(url, env, ctx) {
        FROM prenotazioni_v2 p
        LEFT JOIN tavoli t ON t.id = p.tavolo_id
        LEFT JOIN clienti c ON c.id = p.cliente_id
-       WHERE p.data = ?
+       WHERE p.ristorante_id = ? AND p.data = ?
        ORDER BY p.inizio_min, p.creata_il`,
-    ).bind(data),
+    ).bind(env.RID, data),
     env.DB.prepare(
       `SELECT t.id, t.sala_id, t.nome, t.posti_min, t.posti_max, t.forma, t.x, t.y, t.larghezza, t.altezza, t.online
-       FROM tavoli t JOIN sale s ON s.id = t.sala_id WHERE t.attivo = 1 AND s.attiva = 1 ORDER BY s.ordine, t.nome`,
-    ),
-    env.DB.prepare("SELECT id, nome, larghezza, altezza FROM sale WHERE attiva = 1 ORDER BY ordine, nome"),
+       FROM tavoli t JOIN sale s ON s.id = t.sala_id WHERE t.ristorante_id = ? AND t.attivo = 1 AND s.attiva = 1 ORDER BY s.ordine, t.nome`,
+    ).bind(env.RID),
+    env.DB.prepare("SELECT id, nome, larghezza, altezza FROM sale WHERE ristorante_id = ? AND attiva = 1 ORDER BY ordine, nome").bind(env.RID),
   ]);
   const imp = await leggiImpostazioni(env);
   const elenco = await Promise.all(
@@ -186,8 +185,8 @@ async function puntiVisita(env, p, origine) {
 
 export async function modificaPrenotazione(request, env, id, ctx) {
   const corpo = await leggiJson(request);
-  const attuale = await env.DB.prepare("SELECT id, stato, tavolo_id, note_interne FROM prenotazioni_v2 WHERE id = ?")
-    .bind(id)
+  const attuale = await env.DB.prepare("SELECT id, stato, tavolo_id, note_interne FROM prenotazioni_v2 WHERE id = ? AND ristorante_id = ?")
+    .bind(id, env.RID)
     .first();
   if (!attuale) throw new ErroreRichiesta("Prenotazione non trovata.", 404);
 
@@ -197,7 +196,7 @@ export async function modificaPrenotazione(request, env, id, ctx) {
   if ("tavolo_id" in corpo) {
     tavolo = corpo.tavolo_id || null;
     if (tavolo) {
-      const esiste = await env.DB.prepare("SELECT id FROM tavoli WHERE id = ? AND attivo = 1").bind(tavolo).first();
+      const esiste = await env.DB.prepare("SELECT id FROM tavoli WHERE id = ? AND ristorante_id = ? AND attivo = 1").bind(tavolo, env.RID).first();
       if (!esiste) throw new ErroreRichiesta("Tavolo non trovato.", 404);
     }
   }
@@ -216,8 +215,8 @@ export async function modificaPrenotazione(request, env, id, ctx) {
     throw new ErroreRichiesta("Il tavolo è già occupato in quell'orario da un'altra prenotazione.", 409);
   }
   if (stato === "confermata" && ["in_attesa", "annullata", "no_show"].includes(attuale.stato)) {
-    const p = await env.DB.prepare("SELECT id, codice, data, ora, persone, nome, telefono, email, canale, lingua FROM prenotazioni_v2 WHERE id = ?")
-      .bind(id)
+    const p = await env.DB.prepare("SELECT id, codice, data, ora, persone, nome, telefono, email, canale, lingua FROM prenotazioni_v2 WHERE id = ? AND ristorante_id = ?")
+      .bind(id, env.RID)
       .first();
     if (p.telefono || p.email) ctx.waitUntil(inviaConferma(env, await leggiImpostazioni(env), p, new URL(request.url).origin));
   }
@@ -230,11 +229,11 @@ export async function modificaPrenotazione(request, env, id, ctx) {
 
 export async function leggiSala(env) {
   const [sale, tavoli] = await env.DB.batch([
-    env.DB.prepare("SELECT id, nome, larghezza, altezza FROM sale WHERE attiva = 1 ORDER BY ordine, nome"),
+    env.DB.prepare("SELECT id, nome, larghezza, altezza FROM sale WHERE ristorante_id = ? AND attiva = 1 ORDER BY ordine, nome").bind(env.RID),
     env.DB.prepare(
       `SELECT id, sala_id, nome, posti_min, posti_max, forma, x, y, larghezza, altezza, online
-       FROM tavoli WHERE attivo = 1 ORDER BY nome`,
-    ),
+       FROM tavoli WHERE ristorante_id = ? AND attivo = 1 ORDER BY nome`,
+    ).bind(env.RID),
   ]);
   return json({ sale: sale.results, tavoli: tavoli.results });
 }
@@ -290,15 +289,24 @@ export async function salvaSala(request, env) {
   const tavoliIds = new Set(tavoli.map((t) => t.id));
   if (tavoliIds.size !== tavoli.length) throw new ErroreRichiesta("Due tavoli hanno lo stesso identificativo.");
 
-  const { results: attivi } = await env.DB.prepare("SELECT id, nome FROM tavoli WHERE attivo = 1").all();
+  // Gli identificativi appartengono a un solo ristorante: chi prova a usare quelli di un altro viene fermato.
+  const tuttiIds = [...sale.map((x) => x.id), ...tavoli.map((x) => x.id)];
+  const altrui = await env.DB.prepare(
+    `SELECT id FROM sale WHERE ristorante_id <> ?1 AND id IN (SELECT value FROM json_each(?2))
+     UNION SELECT id FROM tavoli WHERE ristorante_id <> ?1 AND id IN (SELECT value FROM json_each(?2)) LIMIT 1`,
+  )
+    .bind(env.RID, JSON.stringify(tuttiIds))
+    .first();
+  if (altrui) throw new ErroreRichiesta("Identificativo di sala o tavolo non valido. Ricarica la pagina.");
+  const { results: attivi } = await env.DB.prepare("SELECT id, nome FROM tavoli WHERE ristorante_id = ? AND attivo = 1").bind(env.RID).all();
   const rimossi = attivi.filter((t) => !tavoliIds.has(t.id));
   if (rimossi.length) {
     const segnaposto = rimossi.map(() => "?").join(",");
     const { results: occupati } = await env.DB.prepare(
       `SELECT DISTINCT t.nome FROM prenotazioni_v2 p JOIN tavoli t ON t.id = p.tavolo_id
-       WHERE p.tavolo_id IN (${segnaposto}) AND p.data >= ? AND p.stato IN ${SQL_ATTIVI}`,
+       WHERE p.tavolo_id IN (${segnaposto}) AND p.data >= ? AND p.stato IN ${SQL_ATTIVI} AND p.ristorante_id = ?`,
     )
-      .bind(...rimossi.map((t) => t.id), oraRoma().data)
+      .bind(...rimossi.map((t) => t.id), oraRoma().data, env.RID)
       .all();
     if (occupati.length) {
       throw new ErroreRichiesta(
@@ -309,21 +317,21 @@ export async function salvaSala(request, env) {
   }
 
   const istruzioni = [
-    env.DB.prepare("UPDATE sale SET attiva = 0"),
-    env.DB.prepare("UPDATE tavoli SET attivo = 0"),
+    env.DB.prepare("UPDATE sale SET attiva = 0 WHERE ristorante_id = ?").bind(env.RID),
+    env.DB.prepare("UPDATE tavoli SET attivo = 0 WHERE ristorante_id = ?").bind(env.RID),
     ...sale.map((s) =>
       env.DB.prepare(
-        `INSERT INTO sale (id, nome, ordine, larghezza, altezza, attiva) VALUES (?1, ?2, ?3, ?4, ?5, 1)
-         ON CONFLICT (id) DO UPDATE SET nome = ?2, ordine = ?3, larghezza = ?4, altezza = ?5, attiva = 1`,
-      ).bind(s.id, s.nome, s.ordine, s.larghezza, s.altezza),
+        `INSERT INTO sale (id, nome, ordine, larghezza, altezza, attiva, ristorante_id) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6)
+         ON CONFLICT (id) DO UPDATE SET nome = ?2, ordine = ?3, larghezza = ?4, altezza = ?5, attiva = 1 WHERE sale.ristorante_id = ?6`,
+      ).bind(s.id, s.nome, s.ordine, s.larghezza, s.altezza, env.RID),
     ),
     ...tavoli.map((t) =>
       env.DB.prepare(
-        `INSERT INTO tavoli (id, sala_id, nome, posti_min, posti_max, forma, x, y, larghezza, altezza, online, attivo)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)
+        `INSERT INTO tavoli (id, sala_id, nome, posti_min, posti_max, forma, x, y, larghezza, altezza, online, attivo, ristorante_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12)
          ON CONFLICT (id) DO UPDATE SET sala_id = ?2, nome = ?3, posti_min = ?4, posti_max = ?5, forma = ?6,
-           x = ?7, y = ?8, larghezza = ?9, altezza = ?10, online = ?11, attivo = 1`,
-      ).bind(t.id, t.sala_id, t.nome, t.posti_min, t.posti_max, t.forma, t.x, t.y, t.larghezza, t.altezza, t.online),
+           x = ?7, y = ?8, larghezza = ?9, altezza = ?10, online = ?11, attivo = 1 WHERE tavoli.ristorante_id = ?12`,
+      ).bind(t.id, t.sala_id, t.nome, t.posti_min, t.posti_max, t.forma, t.x, t.y, t.larghezza, t.altezza, t.online, env.RID),
     ),
   ];
   await env.DB.batch(istruzioni);
@@ -334,9 +342,9 @@ export async function leggiConfigurazione(env) {
   const oggi = oraRoma().data;
   const imp = await leggiImpostazioni(env);
   const [orari, chiusure, promozioni] = await env.DB.batch([
-    env.DB.prepare("SELECT giorno, servizio, inizio, fine FROM orari ORDER BY giorno, inizio"),
-    env.DB.prepare("SELECT data, motivo FROM chiusure WHERE data >= ? ORDER BY data").bind(oggi),
-    env.DB.prepare("SELECT giorni, ora_da, ora_a, sconto, attiva FROM promozioni ORDER BY id"),
+    env.DB.prepare("SELECT giorno, servizio, inizio, fine FROM orari WHERE ristorante_id = ? ORDER BY giorno, inizio").bind(env.RID),
+    env.DB.prepare("SELECT data, motivo FROM chiusure_r WHERE ristorante_id = ? AND data >= ? ORDER BY data").bind(env.RID, oggi),
+    env.DB.prepare("SELECT giorni, ora_da, ora_a, sconto, attiva FROM promozioni WHERE ristorante_id = ? ORDER BY id").bind(env.RID),
   ]);
   return json({
     impostazioni: imp,
@@ -423,15 +431,17 @@ export async function salvaConfigurazione(request, env) {
 
   await env.DB.batch([
     ...Object.entries(imp).map(([k, v]) =>
-      env.DB.prepare("INSERT INTO impostazioni (chiave, valore) VALUES (?1, ?2) ON CONFLICT (chiave) DO UPDATE SET valore = ?2").bind(k, String(v)),
+      salvaImpostazione(env, k, v),
     ),
-    env.DB.prepare("DELETE FROM orari"),
-    ...orari.map((o) => env.DB.prepare("INSERT INTO orari (giorno, servizio, inizio, fine) VALUES (?, ?, ?, ?)").bind(o.giorno, o.servizio, o.inizio, o.fine)),
-    env.DB.prepare("DELETE FROM chiusure WHERE data >= ?").bind(oggi),
-    ...[...chiusure].map(([data, motivo]) => env.DB.prepare("INSERT INTO chiusure (data, motivo) VALUES (?, ?)").bind(data, motivo)),
-    env.DB.prepare("DELETE FROM promozioni"),
+    env.DB.prepare("DELETE FROM orari WHERE ristorante_id = ?").bind(env.RID),
+    ...orari.map((o) =>
+      env.DB.prepare("INSERT INTO orari (giorno, servizio, inizio, fine, ristorante_id) VALUES (?, ?, ?, ?, ?)").bind(o.giorno, o.servizio, o.inizio, o.fine, env.RID),
+    ),
+    env.DB.prepare("DELETE FROM chiusure_r WHERE ristorante_id = ? AND data >= ?").bind(env.RID, oggi),
+    ...[...chiusure].map(([data, motivo]) => env.DB.prepare("INSERT INTO chiusure_r (ristorante_id, data, motivo) VALUES (?, ?, ?)").bind(env.RID, data, motivo)),
+    env.DB.prepare("DELETE FROM promozioni WHERE ristorante_id = ?").bind(env.RID),
     ...promozioni.map((p) =>
-      env.DB.prepare("INSERT INTO promozioni (giorni, ora_da, ora_a, sconto, attiva) VALUES (?, ?, ?, ?, ?)").bind(p.giorni, p.ora_da, p.ora_a, p.sconto, p.attiva),
+      env.DB.prepare("INSERT INTO promozioni (giorni, ora_da, ora_a, sconto, attiva, ristorante_id) VALUES (?, ?, ?, ?, ?, ?)").bind(p.giorni, p.ora_da, p.ora_a, p.sconto, p.attiva, env.RID),
     ),
   ]);
   return leggiConfigurazione(env);
@@ -449,16 +459,16 @@ export async function statistiche(url, env) {
          SUM(stato = 'arrivata') AS arrivate,
          SUM(stato = 'no_show') AS no_show,
          SUM(stato = 'annullata') AS annullate
-       FROM prenotazioni_v2 WHERE data BETWEEN ? AND ? GROUP BY data`,
-    ).bind(da, oggi),
+       FROM prenotazioni_v2 WHERE ristorante_id = ? AND data BETWEEN ? AND ? GROUP BY data`,
+    ).bind(env.RID, da, oggi),
     env.DB.prepare(
       `SELECT origine, COUNT(*) AS prenotazioni, SUM(persone) AS coperti FROM prenotazioni_v2
-       WHERE data BETWEEN ? AND ? AND stato <> 'annullata' GROUP BY origine`,
-    ).bind(da, oggi),
+       WHERE ristorante_id = ? AND data BETWEEN ? AND ? AND stato <> 'annullata' GROUP BY origine`,
+    ).bind(env.RID, da, oggi),
     env.DB.prepare(
       `SELECT COUNT(*) AS prenotazioni, COALESCE(SUM(persone), 0) AS coperti FROM prenotazioni_v2
-       WHERE data > ? AND data <= ? AND stato IN ${SQL_ATTIVI}`,
-    ).bind(oggi, spostaData(oggi, 7)),
+       WHERE ristorante_id = ? AND data > ? AND data <= ? AND stato IN ${SQL_ATTIVI}`,
+    ).bind(env.RID, oggi, spostaData(oggi, 7)),
   ]);
   const mappa = new Map(perGiorno.results.map((r) => [r.data, r]));
   const serie = [];
@@ -481,7 +491,7 @@ export async function invioManuale(request, env, id) {
   const corpo = await leggiJson(request);
   if (!CANALI.includes(corpo.canale)) throw new ErroreRichiesta("Canale non valido.");
   const tipo = TIPI.includes(corpo.tipo) ? corpo.tipo : "conferma";
-  const p = await env.DB.prepare("SELECT id FROM prenotazioni_v2 WHERE id = ?").bind(id).first();
+  const p = await env.DB.prepare("SELECT id FROM prenotazioni_v2 WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).first();
   if (!p) throw new ErroreRichiesta("Prenotazione non trovata.", 404);
   await registraInvioManuale(env, id, corpo.canale, tipo);
   return json({ ok: true });
@@ -495,10 +505,10 @@ export async function periodo(url, env) {
     env.DB.prepare(
       `SELECT p.id, p.data, p.ora, p.inizio_min, p.persone, p.nome, p.stato, p.origine, t.nome AS tavolo
        FROM prenotazioni_v2 p LEFT JOIN tavoli t ON t.id = p.tavolo_id
-       WHERE p.data BETWEEN ? AND ? ORDER BY p.data, p.inizio_min, p.creata_il`,
-    ).bind(da, a),
-    env.DB.prepare("SELECT data, motivo FROM chiusure WHERE data BETWEEN ? AND ?").bind(da, a),
-    env.DB.prepare("SELECT DISTINCT giorno FROM orari"),
+       WHERE p.ristorante_id = ? AND p.data BETWEEN ? AND ? ORDER BY p.data, p.inizio_min, p.creata_il`,
+    ).bind(env.RID, da, a),
+    env.DB.prepare("SELECT data, motivo FROM chiusure_r WHERE ristorante_id = ? AND data BETWEEN ? AND ?").bind(env.RID, da, a),
+    env.DB.prepare("SELECT DISTINCT giorno FROM orari WHERE ristorante_id = ?").bind(env.RID),
   ]);
   return json({
     da,
@@ -527,21 +537,21 @@ export async function salvaMedia(request, env, chiave) {
   const tipo = tipoImmagine(dati);
   if (!tipo) throw new ErroreRichiesta("Carica un'immagine JPG, PNG o WebP.", 415);
   await env.DB.prepare(
-    `INSERT INTO media (chiave, tipo, dati, aggiornato_il) VALUES (?1, ?2, ?3, ?4)
-     ON CONFLICT (chiave) DO UPDATE SET tipo = ?2, dati = ?3, aggiornato_il = ?4`,
+    `INSERT INTO media_r (ristorante_id, chiave, tipo, dati, aggiornato_il) VALUES (?5, ?1, ?2, ?3, ?4)
+     ON CONFLICT (ristorante_id, chiave) DO UPDATE SET tipo = ?2, dati = ?3, aggiornato_il = ?4`,
   )
-    .bind(chiave, tipo, dati.buffer, new Date().toISOString())
+    .bind(chiave, tipo, dati.buffer, new Date().toISOString(), env.RID)
     .run();
   return json({ ok: true });
 }
 
 export async function eliminaMedia(env, chiave) {
-  await env.DB.prepare("DELETE FROM media WHERE chiave = ?").bind(chiave).run();
+  await env.DB.prepare("DELETE FROM media_r WHERE ristorante_id = ? AND chiave = ?").bind(env.RID, chiave).run();
   return json({ ok: true });
 }
 
 export async function mostraMedia(env, chiave) {
-  const m = await env.DB.prepare("SELECT tipo, dati FROM media WHERE chiave = ?").bind(chiave).first();
+  const m = await env.DB.prepare("SELECT tipo, dati FROM media_r WHERE ristorante_id = ? AND chiave = ?").bind(env.RID, chiave).first();
   if (!m) return new Response(null, { status: 404 });
   return new Response(new Uint8Array(m.dati), {
     headers: {

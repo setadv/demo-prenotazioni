@@ -27,7 +27,7 @@ function crea(tag, classe, testo) {
 
 async function caricaInfo() {
   const r = await fetch("/api/ristorante");
-  if (!r.ok) throw new Error(t("errore_info"));
+  if (!r.ok) throw new Error(t(r.status === 503 ? "non_disponibile" : r.status === 404 ? "ristorante_assente" : "errore_info"));
   stato.info = await r.json();
   mostraImmagine($("logo"), "logo", stato.info.logo);
   mostraImmagine($("foto"), "foto", stato.info.foto);
@@ -366,4 +366,10 @@ selettoreLingua($("scelta-lingua"));
 applicaTesti();
 aggiornaLinkMenu();
 aggiornaCanale();
-caricaInfo().catch((e) => $("fasce").replaceChildren(crea("p", "stato", e.message)));
+caricaInfo().catch((e) => {
+  // Ristorante sospeso o inesistente: niente modulo, solo il messaggio.
+  const messaggio = crea("p", "messaggio", e.message);
+  messaggio.setAttribute("role", "alert");
+  if (e.message === t("non_disponibile") || e.message === t("ristorante_assente")) $("modulo").replaceChildren(messaggio);
+  else $("fasce").replaceChildren(crea("p", "stato", e.message));
+});

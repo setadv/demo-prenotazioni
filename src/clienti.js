@@ -15,6 +15,7 @@ const RIEPILOGO = `
     MAX(CASE WHEN p.stato = 'arrivata' THEN p.data END) AS ultima_visita,
     MIN(CASE WHEN p.stato IN ${SQL_ATTIVI} AND p.data >= :oggi THEN p.data END) AS prossima
   FROM clienti c LEFT JOIN prenotazioni_v2 p ON p.cliente_id = c.id
+  WHERE c.ristorante_id = :rid
   GROUP BY c.id`;
 
 /** Condizione SQL di ogni segmento, applicata al riepilogo (alias r). */
@@ -48,8 +49,9 @@ function parametri(url) {
 
 const RICERCA = "(:q = '%%' OR r.nome LIKE :q ESCAPE '\\' OR r.telefono LIKE :q ESCAPE '\\' OR r.email LIKE :q ESCAPE '\\' OR r.etichette LIKE :q ESCAPE '\\')";
 
-/** D1 accetta solo parametri posizionali: i nomi :xxx diventano ?N, nello stesso ordine per tutta la query. */
-function prepara(env, sql, valori) {
+/** D1 accetta solo parametri posizionali: i nomi :xxx diventano ?N, nello stesso ordine per tutta la query. :rid è il ristorante. */
+function prepara(env, sql, valoriQuery) {
+  const valori = { ...valoriQuery, rid: env.RID };
   const nomi = [];
   const testoSql = sql.replace(/:(\w+)/g, (_, nome) => {
     if (!nomi.includes(nome)) nomi.push(nome);
@@ -87,8 +89,8 @@ export async function dettaglioCliente(env, id) {
     env.DB.prepare(
       `SELECT p.id, p.data, p.ora, p.persone, p.stato, p.origine, p.occasione, p.note, t.nome AS tavolo
        FROM prenotazioni_v2 p LEFT JOIN tavoli t ON t.id = p.tavolo_id
-       WHERE p.cliente_id = ? ORDER BY p.data DESC, p.inizio_min DESC LIMIT 30`,
-    ).bind(id),
+       WHERE p.cliente_id = ? AND p.ristorante_id = ? ORDER BY p.data DESC, p.inizio_min DESC LIMIT 30`,
+    ).bind(id, env.RID),
   ]);
   if (!cliente.results.length) throw new ErroreRichiesta("Cliente non trovato.", 404);
   return json({ cliente: pulisciCliente(cliente.results[0]), storico: storico.results, fidelity: await fidelityCliente(env, id) });
@@ -108,7 +110,7 @@ function compleannoValido(valore) {
 /** Aggiorna solo i campi inviati: note, etichette, compleanno, consenso promozionale e lingua. */
 export async function modificaCliente(request, env, id) {
   const corpo = await leggiJson(request);
-  const attuale = await env.DB.prepare("SELECT marketing, fidelity FROM clienti WHERE id = ?").bind(id).first();
+  const attuale = await env.DB.prepare("SELECT marketing, fidelity FROM clienti WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).first();
   if (!attuale) throw new ErroreRichiesta("Cliente non trovato.", 404);
   const campi = [];
   const valori = [];
@@ -150,7 +152,7 @@ export async function modificaCliente(request, env, id) {
     valori.push(corpo.lingua);
   }
   if (!campi.length) throw new ErroreRichiesta("Nessuna modifica da salvare.");
-  await env.DB.prepare(`UPDATE clienti SET ${campi.join(", ")} WHERE id = ?`).bind(...valori, id).run();
+  await env.DB.prepare(`UPDATE clienti SET ${campi.join(", ")} WHERE id = ? AND ristorante_id = ?`).bind(...valori, id, env.RID).run();
   return dettaglioCliente(env, id);
 }
 

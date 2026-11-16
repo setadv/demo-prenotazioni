@@ -1,6 +1,7 @@
 import qrcode from "qrcode-generator";
 import { ALTRE_LINGUE, LINGUE } from "./lingue.js";
-import { ErroreRichiesta, intero, json, leggiImpostazioni, leggiJson, testo } from "./util.js";
+import { ErroreRichiesta, intero, json, leggiImpostazioni, leggiJson, salvaImpostazione, testo } from "./util.js";
+import { linkPubblico } from "./ristoranti.js";
 
 /** I 14 allergeni da dichiarare secondo il Regolamento UE 1169/2011. */
 export const ALLERGENI = [
@@ -34,10 +35,10 @@ function leggiTraduzioni(valore) {
 
 async function caricaMenu(env) {
   const [categorie, piatti] = await env.DB.batch([
-    env.DB.prepare("SELECT id, nome, traduzioni FROM menu_categorie ORDER BY ordine, nome"),
+    env.DB.prepare("SELECT id, nome, traduzioni FROM menu_categorie WHERE ristorante_id = ? ORDER BY ordine, nome").bind(env.RID),
     env.DB.prepare(
-      "SELECT id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile, asporto FROM menu_piatti ORDER BY ordine, nome",
-    ),
+      "SELECT id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile, asporto FROM menu_piatti WHERE ristorante_id = ? ORDER BY ordine, nome",
+    ).bind(env.RID),
   ]);
   return categorie.results.map((c) => ({
     id: c.id,
@@ -67,9 +68,9 @@ export async function menuPubblico(url, env) {
   const t = url.searchParams.get("t");
   let tavolo = null;
   if (t && ID.test(t)) {
-    tavolo = (await env.DB.prepare("SELECT nome FROM tavoli WHERE id = ? AND attivo = 1").bind(t).first())?.nome ?? null;
+    tavolo = (await env.DB.prepare("SELECT nome FROM tavoli WHERE id = ? AND ristorante_id = ? AND attivo = 1").bind(t, env.RID).first())?.nome ?? null;
   }
-  const logo = await env.DB.prepare("SELECT aggiornato_il FROM media WHERE chiave = 'logo'").first();
+  const logo = await env.DB.prepare("SELECT aggiornato_il FROM media_r WHERE ristorante_id = ? AND chiave = 'logo'").bind(env.RID).first();
   const categorie = (await caricaMenu(env)).filter((c) => c.piatti.length);
   return json({
     ristorante: { nome: imp.nome, indirizzo: imp.indirizzo, telefono: imp.telefono, logo: logo?.aggiornato_il ?? null },
@@ -148,21 +149,33 @@ export async function salvaMenu(request, env) {
   const nota = corpo.nota ?? {};
   const note = LINGUE.map((l) => [l === "it" ? "menu_nota" : `menu_nota_${l}`, testo(nota[l], 300, { campo: "La nota del menù" })]);
 
+  // Gli identificativi appartengono a un solo ristorante: quelli di un altro vengono rifiutati.
+  const altrui = await env.DB.prepare(
+    `SELECT id FROM menu_categorie WHERE ristorante_id <> ?1 AND id IN (SELECT value FROM json_each(?2))
+     UNION SELECT id FROM menu_piatti WHERE ristorante_id <> ?1 AND id IN (SELECT value FROM json_each(?2)) LIMIT 1`,
+  )
+    .bind(env.RID, JSON.stringify([...categorie.map((c) => c.id), ...piatti.map((p) => p.id)]))
+    .first();
+  if (altrui) throw new ErroreRichiesta("Identificativo di categoria o piatto non valido. Ricarica la pagina.");
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM menu_piatti"),
-    env.DB.prepare("DELETE FROM menu_categorie"),
+    env.DB.prepare("DELETE FROM menu_piatti WHERE ristorante_id = ?").bind(env.RID),
+    env.DB.prepare("DELETE FROM menu_categorie WHERE ristorante_id = ?").bind(env.RID),
     ...categorie.map((c) =>
-      env.DB.prepare("INSERT INTO menu_categorie (id, nome, traduzioni, ordine) VALUES (?, ?, ?, ?)").bind(c.id, c.nome, JSON.stringify(c.traduzioni), c.ordine),
+      env.DB.prepare("INSERT INTO menu_categorie (id, nome, traduzioni, ordine, ristorante_id) VALUES (?, ?, ?, ?, ?)").bind(
+        c.id,
+        c.nome,
+        JSON.stringify(c.traduzioni),
+        c.ordine,
+        env.RID,
+      ),
     ),
     ...piatti.map((p) =>
       env.DB.prepare(
-        `INSERT INTO menu_piatti (id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile, asporto, ordine)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(p.id, p.categoria_id, p.nome, p.descrizione, p.prezzo, p.allergeni, p.tag, JSON.stringify(p.traduzioni), p.disponibile, p.asporto, p.ordine),
+        `INSERT INTO menu_piatti (id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile, asporto, ordine, ristorante_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(p.id, p.categoria_id, p.nome, p.descrizione, p.prezzo, p.allergeni, p.tag, JSON.stringify(p.traduzioni), p.disponibile, p.asporto, p.ordine, env.RID),
     ),
-    ...note.map(([k, v]) =>
-      env.DB.prepare("INSERT INTO impostazioni (chiave, valore) VALUES (?1, ?2) ON CONFLICT (chiave) DO UPDATE SET valore = ?2").bind(k, v),
-    ),
+    ...note.map(([k, v]) => salvaImpostazione(env, k, v)),
   ]);
   return leggiMenu(env);
 }
@@ -181,16 +194,16 @@ export async function qrCode(url, env) {
   const PAGINE = { prenota: "/", ordina: "/ordina", regalo: "/regalo", menu: "/menu" };
   const pagina = PAGINE[url.searchParams.get("pagina")] ? url.searchParams.get("pagina") : "menu";
   const t = url.searchParams.get("t");
-  let destinazione = `${url.origin}${PAGINE[pagina]}`;
+  let query = "";
   let nomeFile = `qr-${pagina}`;
   if (pagina === "menu" && t) {
     if (!ID.test(t)) throw new ErroreRichiesta("Tavolo non valido.");
-    const tavolo = await env.DB.prepare("SELECT nome FROM tavoli WHERE id = ? AND attivo = 1").bind(t).first();
+    const tavolo = await env.DB.prepare("SELECT nome FROM tavoli WHERE id = ? AND ristorante_id = ? AND attivo = 1").bind(t, env.RID).first();
     if (!tavolo) throw new ErroreRichiesta("Tavolo non trovato.", 404);
-    destinazione += `?t=${encodeURIComponent(t)}`;
+    query = `t=${encodeURIComponent(t)}`;
     nomeFile += `-tavolo-${tavolo.nome.replace(/[^\w-]/g, "")}`;
   }
-  return rispostaQr(destinazione, nomeFile, url);
+  return rispostaQr(linkPubblico(env, PAGINE[pagina], { query }), nomeFile, url);
 }
 
 function rispostaQr(destinazione, nomeFile, url) {

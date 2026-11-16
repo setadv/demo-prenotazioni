@@ -1,3 +1,5 @@
+import { PREDEFINITE } from "./predefiniti.js";
+
 export const STATI = ["in_attesa", "confermata", "arrivata", "no_show", "annullata"];
 export const STATI_ATTIVI = ["in_attesa", "confermata", "arrivata"];
 export const ORIGINI = ["online", "telefono", "walk_in"];
@@ -17,7 +19,7 @@ export const json = (dati, status = 200, headers = {}) =>
     },
   });
 
-export const errore = (messaggio, status = 400, extra = {}) => json({ errore: messaggio, ...extra }, status);
+export const errore = (messaggio, status = 400, extra = {}, headers = {}) => json({ errore: messaggio, ...extra }, status, headers);
 
 export class ErroreRichiesta extends Error {
   constructor(messaggio, status = 400) {
@@ -182,9 +184,24 @@ const NUMERICHE = new Set([
   "pagamento_alla_consegna",
 ]);
 
+/** Impostazioni del ristorante del contesto: predefinite più quelle salvate, con i moduli fuori piano spenti. */
 export async function leggiImpostazioni(env) {
-  const { results } = await env.DB.prepare("SELECT chiave, valore FROM impostazioni").all();
+  const { results } = await env.DB.prepare("SELECT chiave, valore FROM impostazioni_r WHERE ristorante_id = ?").bind(env.RID).all();
+  const grezze = { ...PREDEFINITE, ...Object.fromEntries(results.map((r) => [r.chiave, r.valore])) };
   const imp = {};
-  for (const r of results) imp[r.chiave] = NUMERICHE.has(r.chiave) ? Number(r.valore) : r.valore;
+  for (const [k, v] of Object.entries(grezze)) imp[k] = NUMERICHE.has(k) ? Number(v) : v;
+  if (!imp.nome && env.RISTORANTE) imp.nome = env.RISTORANTE.nome;
+  const moduli = env.MODULI ?? new Set();
+  if (!moduli.has("fidelity")) imp.fidelity_attiva = 0;
+  if (!moduli.has("gift")) imp.gift_attive = 0;
+  if (!moduli.has("sondaggi")) imp.sondaggio_attivo = 0;
+  if (!moduli.has("ordini")) imp.ordini_attivi = 0;
   return imp;
+}
+
+/** Istruzione che salva un'impostazione del ristorante del contesto. */
+export function salvaImpostazione(env, chiave, valore) {
+  return env.DB.prepare(
+    "INSERT INTO impostazioni_r (ristorante_id, chiave, valore) VALUES (?1, ?2, ?3) ON CONFLICT (ristorante_id, chiave) DO UPDATE SET valore = ?3",
+  ).bind(env.RID, chiave, String(valore));
 }

@@ -37,9 +37,9 @@ export async function infoRistorante(env) {
   const imp = await leggiImpostazioni(env);
   const oggi = oraRoma().data;
   const [orari, chiusure, media] = await env.DB.batch([
-    env.DB.prepare("SELECT giorno, servizio, inizio, fine FROM orari ORDER BY giorno, inizio"),
-    env.DB.prepare("SELECT data FROM chiusure WHERE data BETWEEN ? AND ?").bind(oggi, spostaData(oggi, imp.giorni_prenotabili)),
-    env.DB.prepare("SELECT chiave, aggiornato_il FROM media"),
+    env.DB.prepare("SELECT giorno, servizio, inizio, fine FROM orari WHERE ristorante_id = ? ORDER BY giorno, inizio").bind(env.RID),
+    env.DB.prepare("SELECT data FROM chiusure_r WHERE ristorante_id = ? AND data BETWEEN ? AND ?").bind(env.RID, oggi, spostaData(oggi, imp.giorni_prenotabili)),
+    env.DB.prepare("SELECT chiave, aggiornato_il FROM media_r WHERE ristorante_id = ?").bind(env.RID),
   ]);
   const versione = (k) => media.results.find((m) => m.chiave === k)?.aggiornato_il ?? null;
   return json({
@@ -147,9 +147,9 @@ async function prenotazioneConToken(request, env, id) {
   const token = request.headers.get("x-prenotazione-token") ?? "";
   const p = await env.DB.prepare(
     `SELECT id, codice, token_hash, data, ora, inizio_min, persone, nome, occasione, note, stato, sconto, lingua, cliente_id
-     FROM prenotazioni_v2 WHERE id = ?`,
+     FROM prenotazioni_v2 WHERE id = ? AND ristorante_id = ?`,
   )
-    .bind(id)
+    .bind(id, env.RID)
     .first();
   if (!p || !(await tokenValido(env, p.id, token, p.token_hash))) {
     throw new ErroreRichiesta(erroreIn(linguaRichiesta(request), "non_trovata"), 404);
@@ -169,9 +169,9 @@ export async function leggiPrenotazione(request, env, id) {
   let fidelity = null;
   if (imp.fidelity_attiva && p.cliente_id) {
     const c = await env.DB.prepare(
-      "SELECT c.fidelity, (SELECT COALESCE(SUM(punti), 0) FROM punti_movimenti WHERE cliente_id = c.id) AS saldo FROM clienti c WHERE c.id = ?",
+      "SELECT c.fidelity, (SELECT COALESCE(SUM(punti), 0) FROM punti_movimenti WHERE cliente_id = c.id) AS saldo FROM clienti c WHERE c.id = ? AND c.ristorante_id = ?",
     )
-      .bind(p.cliente_id)
+      .bind(p.cliente_id, env.RID)
       .first();
     if (c?.fidelity) fidelity = { saldo: c.saldo, soglia: imp.premio_soglia };
   }
@@ -195,8 +195,8 @@ export async function leggiPrenotazione(request, env, id) {
 export async function annullaPrenotazione(request, env, id) {
   const p = await prenotazioneConToken(request, env, id);
   if (!annullabile(p)) throw new ErroreRichiesta(erroreIn(linguaRichiesta(request), "non_annullabile"), 409);
-  await env.DB.prepare("UPDATE prenotazioni_v2 SET stato = 'annullata', aggiornata_il = ? WHERE id = ?")
-    .bind(new Date().toISOString(), id)
+  await env.DB.prepare("UPDATE prenotazioni_v2 SET stato = 'annullata', aggiornata_il = ? WHERE id = ? AND ristorante_id = ?")
+    .bind(new Date().toISOString(), id, env.RID)
     .run();
   return json({ ok: true, stato: "annullata" });
 }

@@ -1,3 +1,4 @@
+import { linkPubblico } from "./ristoranti.js";
 import { dataIn, erroreIn, linguaRichiesta, linguaValida, LINGUE, modelloIn } from "./lingue.js";
 import { consegna, formatoEuro, testoModello, tokenPer, tokenPerValido } from "./notifiche.js";
 import { creaPagamento, stripeAttivo } from "./pagamenti.js";
@@ -32,7 +33,7 @@ function scadenzaMesi(mesi) {
 
 export async function linkGift(env, origine, id, lingua = "it") {
   const l = lingua !== "it" ? `&l=${lingua}` : "";
-  return `${origine}/buono#tipo=gift&id=${id}&t=${await tokenPer(env, "gift", id)}${l}`;
+  return linkPubblico(env, "/buono", { origine, frammento: `tipo=gift&id=${id}&t=${await tokenPer(env, "gift", id)}${l}` });
 }
 
 async function nuovoCodice(env) {
@@ -79,12 +80,12 @@ async function inviaGift(env, imp, g, origine) {
 export async function attivaGift(env, id, origine, pagamentoId = null) {
   const adesso = new Date().toISOString();
   const r = await env.DB.prepare(
-    "UPDATE gift_card SET stato = 'attiva', attivata_il = ?, pagamento_id = COALESCE(?, pagamento_id) WHERE id = ? AND stato = 'in_attesa_pagamento'",
+    "UPDATE gift_card SET stato = 'attiva', attivata_il = ?, pagamento_id = COALESCE(?, pagamento_id) WHERE id = ? AND ristorante_id = ? AND stato = 'in_attesa_pagamento'",
   )
-    .bind(adesso, pagamentoId, id)
+    .bind(adesso, pagamentoId, id, env.RID)
     .run();
   if (!r.meta.changes) return false;
-  const g = await env.DB.prepare("SELECT * FROM gift_card WHERE id = ?").bind(id).first();
+  const g = await env.DB.prepare("SELECT * FROM gift_card WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).first();
   await env.DB.prepare("INSERT INTO gift_card_movimenti (gift_card_id, importo, nota, creato_il) VALUES (?, ?, 'Acquisto online', ?)")
     .bind(id, g.importo, adesso)
     .run();
@@ -146,11 +147,11 @@ export async function acquistaGift(request, env) {
   const importo = euro * 100;
   await env.DB.prepare(
     `INSERT INTO gift_card (id, codice, importo, saldo, acquirente_nome, acquirente_email, acquirente_telefono, destinatario_nome,
-       destinatario_email, destinatario_telefono, messaggio, lingua, stato, origine, creata_il, scade_il)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_attesa_pagamento', 'online', ?, ?)`,
+       destinatario_email, destinatario_telefono, messaggio, lingua, stato, origine, creata_il, scade_il, ristorante_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_attesa_pagamento', 'online', ?, ?, ?)`,
   )
     .bind(id, codice, importo, importo, d.acquirente_nome, d.acquirente_email, d.acquirente_telefono, d.destinatario_nome, d.destinatario_email,
-      d.destinatario_telefono, d.messaggio, lingua, new Date().toISOString(), scadenzaMesi(imp.gift_validita_mesi))
+      d.destinatario_telefono, d.messaggio, lingua, new Date().toISOString(), scadenzaMesi(imp.gift_validita_mesi), env.RID)
     .run();
   const origine = new URL(request.url).origin;
   const token = await tokenPer(env, "gift", id);
@@ -159,11 +160,11 @@ export async function acquistaGift(request, env) {
     importo,
     email: d.acquirente_email,
     lingua,
-    successo: `${origine}/buono?tipo=gift&id=${id}&t=${token}&l=${lingua}&pagato=1`,
-    annullato: `${origine}/regalo?lang=${lingua}`,
-    metadati: { tipo: "gift", id },
+    successo: linkPubblico(env, "/buono", { origine, query: `tipo=gift&id=${id}&t=${token}&l=${lingua}&pagato=1` }),
+    annullato: linkPubblico(env, "/regalo", { origine, query: `lang=${lingua}` }),
+    metadati: { tipo: "gift", id, ristorante: env.RID },
   });
-  await env.DB.prepare("UPDATE gift_card SET pagamento_id = ? WHERE id = ?").bind(pagamento.id, id).run();
+  await env.DB.prepare("UPDATE gift_card SET pagamento_id = ? WHERE id = ? AND ristorante_id = ?").bind(pagamento.id, id, env.RID).run();
   return json({ id, url_pagamento: pagamento.url }, 201);
 }
 
@@ -177,17 +178,17 @@ export async function leggiBuono(request, env, tipo, id) {
   const oggi = oraRoma().data;
   if (tipo === "gift") {
     const g = await env.DB.prepare(
-      "SELECT codice, importo, saldo, acquirente_nome, destinatario_nome, messaggio, stato, scade_il FROM gift_card WHERE id = ?",
+      "SELECT codice, importo, saldo, acquirente_nome, destinatario_nome, messaggio, stato, scade_il FROM gift_card WHERE id = ? AND ristorante_id = ?",
     )
-      .bind(id)
+      .bind(id, env.RID)
       .first();
     if (!g) throw new ErroreRichiesta(erroreIn(lingua, "non_trovato"), 404);
     return json({ tipo, ...g, scaduto: g.scade_il < oggi, ristorante });
   }
   const p = await env.DB.prepare(
-    "SELECT p.codice, p.stato, p.scade_il, p.punti, c.nome, c.lingua FROM premi p JOIN clienti c ON c.id = p.cliente_id WHERE p.id = ?",
+    "SELECT p.codice, p.stato, p.scade_il, p.punti, c.nome, c.lingua FROM premi p JOIN clienti c ON c.id = p.cliente_id WHERE p.id = ? AND p.ristorante_id = ?",
   )
-    .bind(id)
+    .bind(id, env.RID)
     .first();
   if (!p) throw new ErroreRichiesta(erroreIn(lingua, "non_trovato"), 404);
   const descrizioni = Object.fromEntries(LINGUE.map((l) => [l, modelloIn(imp, "premio_descrizione", l)]));
@@ -204,10 +205,10 @@ export async function elencoGift(url, env) {
        g.acquirente_email, g.acquirente_telefono, g.stato, g.origine, g.creata_il, g.scade_il, g.lingua,
        (SELECT n.esito || '|' || n.canale FROM notifiche n WHERE n.prenotazione_id = g.id AND n.tipo = 'gift' ORDER BY n.id DESC LIMIT 1) AS notifica
      FROM gift_card g
-     WHERE g.stato <> 'in_attesa_pagamento' AND (?1 = '%%' OR g.codice LIKE ?1 ESCAPE '\\' OR g.acquirente_nome LIKE ?1 ESCAPE '\\' OR g.destinatario_nome LIKE ?1 ESCAPE '\\')
+     WHERE g.ristorante_id = ?2 AND g.stato <> 'in_attesa_pagamento' AND (?1 = '%%' OR g.codice LIKE ?1 ESCAPE '\\' OR g.acquirente_nome LIKE ?1 ESCAPE '\\' OR g.destinatario_nome LIKE ?1 ESCAPE '\\')
      ORDER BY g.creata_il DESC LIMIT 100`,
   )
-    .bind(filtro)
+    .bind(filtro, env.RID)
     .all();
   const imp = await leggiImpostazioni(env);
   const oggi = oraRoma().data;
@@ -226,9 +227,9 @@ export async function elencoGift(url, env) {
   );
   const [totali] = (
     await env.DB.prepare(
-      "SELECT COUNT(*) AS emesse, COALESCE(SUM(importo), 0) AS venduto, COALESCE(SUM(CASE WHEN scade_il >= ? THEN saldo END), 0) AS da_spendere FROM gift_card WHERE stato = 'attiva'",
+      "SELECT COUNT(*) AS emesse, COALESCE(SUM(importo), 0) AS venduto, COALESCE(SUM(CASE WHEN scade_il >= ? THEN saldo END), 0) AS da_spendere FROM gift_card WHERE ristorante_id = ? AND stato = 'attiva'",
     )
-      .bind(oggi)
+      .bind(oggi, env.RID)
       .all()
   ).results;
   return json({ gift_card: giftCard, totali, online: stripeAttivo(env) });
@@ -248,20 +249,20 @@ export async function emettiGift(request, env) {
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO gift_card (id, codice, importo, saldo, acquirente_nome, acquirente_email, acquirente_telefono, destinatario_nome,
-         destinatario_email, destinatario_telefono, messaggio, lingua, stato, origine, creata_il, attivata_il, scade_il)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'attiva', 'gestore', ?, ?, ?)`,
+         destinatario_email, destinatario_telefono, messaggio, lingua, stato, origine, creata_il, attivata_il, scade_il, ristorante_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'attiva', 'gestore', ?, ?, ?, ?)`,
     ).bind(id, codice, importo, importo, d.acquirente_nome, d.acquirente_email, d.acquirente_telefono, d.destinatario_nome, d.destinatario_email,
-      d.destinatario_telefono, d.messaggio, lingua, adesso, adesso, scade),
+      d.destinatario_telefono, d.messaggio, lingua, adesso, adesso, scade, env.RID),
     env.DB.prepare("INSERT INTO gift_card_movimenti (gift_card_id, importo, nota, creato_il) VALUES (?, ?, 'Venduta al ristorante', ?)").bind(id, importo, adesso),
   ]);
-  const g = await env.DB.prepare("SELECT * FROM gift_card WHERE id = ?").bind(id).first();
+  const g = await env.DB.prepare("SELECT * FROM gift_card WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).first();
   await inviaGift(env, imp, g, new URL(request.url).origin);
   return json({ id, codice, link: await linkGift(env, new URL(request.url).origin, id, lingua) }, 201);
 }
 
 export async function dettaglioGift(env, id) {
   const [g, movimenti] = await env.DB.batch([
-    env.DB.prepare("SELECT * FROM gift_card WHERE id = ?").bind(id),
+    env.DB.prepare("SELECT * FROM gift_card WHERE id = ? AND ristorante_id = ?").bind(id, env.RID),
     env.DB.prepare("SELECT importo, nota, creato_il FROM gift_card_movimenti WHERE gift_card_id = ? ORDER BY id DESC").bind(id),
   ]);
   if (!g.results.length) throw new ErroreRichiesta("Gift card non trovata.", 404);
@@ -274,7 +275,7 @@ export async function usaGift(request, env, id) {
   const importo = Math.round(Number(String(corpo.importo ?? "").replace(",", ".")) * 100);
   if (!Number.isInteger(importo) || importo <= 0) throw new ErroreRichiesta("Scrivi l'importo da scalare, in euro.");
   const nota = testo(corpo.nota, 120, { campo: "La nota" });
-  const g = await env.DB.prepare("SELECT stato, saldo, scade_il FROM gift_card WHERE id = ?").bind(id).first();
+  const g = await env.DB.prepare("SELECT stato, saldo, scade_il FROM gift_card WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).first();
   if (!g) throw new ErroreRichiesta("Gift card non trovata.", 404);
   if (g.stato !== "attiva") throw new ErroreRichiesta("Questa gift card non è attiva.", 409);
   if (g.scade_il < oraRoma().data) throw new ErroreRichiesta("Questa gift card è scaduta.", 409);
@@ -289,7 +290,7 @@ export async function usaGift(request, env, id) {
 }
 
 export async function annullaGift(env, id) {
-  const r = await env.DB.prepare("UPDATE gift_card SET stato = 'annullata' WHERE id = ? AND stato = 'attiva'").bind(id).run();
+  const r = await env.DB.prepare("UPDATE gift_card SET stato = 'annullata' WHERE id = ? AND ristorante_id = ? AND stato = 'attiva'").bind(id, env.RID).run();
   if (!r.meta.changes) throw new ErroreRichiesta("Gift card non trovata o già annullata.", 404);
   return dettaglioGift(env, id);
 }
@@ -300,14 +301,14 @@ export async function cercaCodice(url, env) {
   if (!CODICE.test(codice)) throw new ErroreRichiesta("Scrivi un codice come GC-ABC123 o PR-ABC123.");
   const oggi = oraRoma().data;
   if (codice.startsWith("GC-")) {
-    const g = await env.DB.prepare("SELECT id, codice, importo, saldo, stato, scade_il, destinatario_nome FROM gift_card WHERE codice = ?").bind(codice).first();
+    const g = await env.DB.prepare("SELECT id, codice, importo, saldo, stato, scade_il, destinatario_nome FROM gift_card WHERE codice = ? AND ristorante_id = ?").bind(codice, env.RID).first();
     if (!g || g.stato === "in_attesa_pagamento") throw new ErroreRichiesta("Nessuna gift card con questo codice.", 404);
     return json({ tipo: "gift", ...g, scaduto: g.scade_il < oggi });
   }
   const p = await env.DB.prepare(
-    "SELECT p.id, p.codice, p.descrizione, p.stato, p.scade_il, c.nome FROM premi p JOIN clienti c ON c.id = p.cliente_id WHERE p.codice = ?",
+    "SELECT p.id, p.codice, p.descrizione, p.stato, p.scade_il, c.nome FROM premi p JOIN clienti c ON c.id = p.cliente_id WHERE p.codice = ? AND p.ristorante_id = ?",
   )
-    .bind(codice)
+    .bind(codice, env.RID)
     .first();
   if (!p) throw new ErroreRichiesta("Nessun premio con questo codice.", 404);
   return json({ tipo: "premio", ...p, scaduto: p.scade_il < oggi });

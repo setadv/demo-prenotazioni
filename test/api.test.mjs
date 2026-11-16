@@ -114,6 +114,7 @@ before(async () => {
       "--var", `WHATSAPP_VERIFY_TOKEN:${VERIFICA_WA}`, "--var", `WHATSAPP_APP_SECRET:${SEGRETO_WA}`,
       "--var", "STRIPE_SECRET_KEY:sk_test_finta", "--var", `STRIPE_WEBHOOK_SECRET:${SEGRETO_STRIPE}`,
       "--var", `STRIPE_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/stripe`,
+      "--var", "SUPERADMIN_EMAIL:super@esempio.it",
     ],
     { stdio: "ignore", env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" } },
   );
@@ -876,6 +877,220 @@ test("asporto e consegna: carrello, fasce, minimo, zone, stati e pagamento onlin
   assert.equal(pagato.pagato, true);
   assert.match(pagato.messaggio, /confermato/);
   await modulo("ordini", { consegna_cap: "", ordini_max_fascia: 4 });
+});
+
+// ---------- Piattaforma: più ristoranti, account con ruoli, super amministratore ----------
+
+const cookieDa = (r) => r.headers.get("set-cookie").split(";")[0];
+const con = (c) => (percorso, opzioni = {}) => chiama(percorso, { ...opzioni, headers: { cookie: c, ...(opzioni.headers ?? {}) } });
+const tokenDa = (testo) => testo.match(/\/accesso#t=([\w-]+)/)[1];
+let piattaforma;
+let ristorante2;
+let titolare2;
+
+async function attivaAccount(link, password, ip) {
+  const r = await chiama("/api/accesso/imposta", { method: "POST", headers: { "cf-connecting-ip": ip }, body: { token: tokenDa(link), password } });
+  assert.equal(r.status, 200, await r.clone().text());
+  return r.json();
+}
+
+async function accedi(email, password, ip) {
+  const r = await chiama("/api/admin/login", { method: "POST", headers: { "cf-connecting-ip": ip }, body: { email, password } });
+  assert.equal(r.status, 200, await r.clone().text());
+  return cookieDa(r);
+}
+
+test("la piattaforma accetta solo il super amministratore", async () => {
+  const sbagliata = await chiama("/api/piattaforma/login", { method: "POST", headers: { "cf-connecting-ip": "10.70.0.1" }, body: { email: "super@esempio.it", password: "no" } });
+  assert.equal(sbagliata.status, 401);
+  assert.equal((await admin("/api/piattaforma/riepilogo")).status, 401, "la sessione del ristorante non apre la piattaforma");
+  const r = await chiama("/api/piattaforma/login", { method: "POST", headers: { "cf-connecting-ip": "10.70.0.2" }, body: { email: "SUPER@esempio.it", password: PASSWORD } });
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("set-cookie"), /__Host-piattaforma=.+HttpOnly; SameSite=Strict/);
+  piattaforma = con(cookieDa(r));
+  assert.equal((await piattaforma("/api/admin/agenda")).status, 401, "la sessione della piattaforma non è quella di un ristorante");
+  const riepilogo = await (await piattaforma("/api/piattaforma/riepilogo")).json();
+  assert.equal(riepilogo.totale, 1);
+  assert.equal(riepilogo.conteggi.attivo, 1);
+});
+
+test("il super amministratore crea un ristorante in prova e invita il titolare", async () => {
+  assert.equal((await piattaforma("/api/piattaforma/ristoranti", { method: "POST", body: { nome: "Admin", slug: "admin" } })).status, 400, "indirizzo riservato");
+  assert.equal((await piattaforma("/api/piattaforma/ristoranti", { method: "POST", body: { nome: "Doppione", slug: "melograno" } })).status, 409);
+  const r = await piattaforma("/api/piattaforma/ristoranti", {
+    method: "POST",
+    body: { nome: "Trattoria Due", slug: "trattoria-due", piano: "base", giorni_prova: 14, nome_titolare: "Anna Due", email_titolare: "Anna@Due.it" },
+  });
+  assert.equal(r.status, 201);
+  const creato = await r.json();
+  ristorante2 = creato.ristorante;
+  assert.equal(ristorante2.stato, "prova");
+  assert.deepEqual(ristorante2.moduli, []);
+  assert.match(creato.indirizzo, /\?r=trattoria-due$/);
+  assert.equal(creato.invito.inviata, true);
+  const email = await attendiInvio((v) => v.json?.to?.[0] === "anna@due.it");
+  assert.match(email.json.text, /Trattoria Due/);
+
+  // Il link è monouso.
+  const attivato = await attivaAccount(email.json.text, "una-password-lunga", "10.70.1.1");
+  assert.equal(attivato.destinazione, "/admin");
+  const riuso = await chiama("/api/accesso/imposta", { method: "POST", headers: { "cf-connecting-ip": "10.70.1.2" }, body: { token: tokenDa(email.json.text), password: "altra-password-lunga" } });
+  assert.equal(riuso.status, 400);
+
+  titolare2 = con(await accedi("anna@due.it", "una-password-lunga", "10.70.1.3"));
+  const s = await (await titolare2("/api/admin/sessione")).json();
+  assert.equal(s.nome, "Trattoria Due");
+  assert.equal(s.utente.ruolo, "titolare");
+  assert.equal(s.ristorante.stato, "prova");
+  assert.deepEqual(s.ristorante.moduli, []);
+});
+
+test("i dati dei ristoranti sono separati", async () => {
+  // Sala e orari di partenza del nuovo ristorante; nessun dato della demo.
+  const sala = await (await titolare2("/api/admin/sala")).json();
+  assert.equal(sala.tavoli.length, 6);
+  const salaDemo = await (await admin("/api/admin/sala")).json();
+  assert.equal(salaDemo.tavoli.some((t) => sala.tavoli.some((x) => x.id === t.id)), false);
+  assert.equal((await (await titolare2("/api/admin/clienti")).json()).clienti.length, 0);
+  assert.equal((await (await titolare2(`/api/admin/agenda?data=${MARTEDI}`)).json()).prenotazioni.length, 0);
+
+  // Prenotazione pubblica sul secondo ristorante, con lo stesso telefono di un cliente della demo.
+  const info = await (await chiama("/api/ristorante?r=trattoria-due")).json();
+  assert.equal(info.nome, "Trattoria Due");
+  assert.equal(info.moduli.gift, false);
+  const r = await chiama("/api/prenotazioni?r=trattoria-due", {
+    method: "POST",
+    headers: { "cf-connecting-ip": "10.70.2.1" },
+    body: { data: MARTEDI, ora: "20:00", persone: 2, nome: "Prova Test", telefono: "333 0000001", privacy: true },
+  });
+  assert.equal(r.status, 201, await r.clone().text());
+  const p = await r.json();
+  const agenda2 = await (await titolare2(`/api/admin/agenda?data=${MARTEDI}`)).json();
+  assert.equal(agenda2.prenotazioni.length, 1);
+  const agendaDemo = await (await admin(`/api/admin/agenda?data=${MARTEDI}`)).json();
+  assert.equal(agendaDemo.prenotazioni.some((x) => x.id === p.id), false);
+  assert.equal((await (await titolare2("/api/admin/clienti")).json()).clienti.length, 1);
+
+  // Il link personale porta al ristorante giusto anche senza ?r=.
+  const letta = await (await chiama(`/api/prenotazioni/${p.id}`, { headers: { "x-prenotazione-token": p.token } })).json();
+  assert.equal(letta.ristorante.nome, "Trattoria Due");
+
+  // Un ristorante non tocca i dati dell'altro.
+  const demo = agendaDemo.prenotazioni[0];
+  assert.equal((await titolare2(`/api/admin/prenotazioni/${demo.id}`, { method: "PATCH", body: { stato: "annullata" } })).status, 404);
+  const rubata = { sale: salaDemo.sale, tavoli: salaDemo.tavoli };
+  assert.equal((await titolare2("/api/admin/sala", { method: "PUT", body: rubata })).status, 400);
+  assert.equal((await (await admin("/api/admin/sala")).json()).tavoli.length, salaDemo.tavoli.length);
+
+  // La password principale vale solo per il ristorante predefinito.
+  const principale = await chiama("/api/admin/login?r=trattoria-due", { method: "POST", headers: { "cf-connecting-ip": "10.70.2.2" }, body: { password: PASSWORD } });
+  assert.equal(principale.status, 401);
+});
+
+test("le funzioni seguono il piano del ristorante", async () => {
+  assert.equal((await titolare2("/api/admin/moduli/gift", { method: "PUT", body: { impostazioni: { gift_attive: true } } })).status, 403);
+  const ordini = await (await chiama("/api/ordini/info?r=trattoria-due")).json();
+  assert.equal(ordini.attivi, false);
+  const moduli = await (await titolare2("/api/admin/moduli")).json();
+  assert.equal(moduli.stripe, false, "le chiavi Stripe della demo non valgono per gli altri ristoranti");
+  assert.equal(moduli.canali.whatsapp_recensione, false, "neanche quelle di WhatsApp");
+
+  // Con il modulo gift e le sue chiavi Stripe il ristorante può vendere gift card online.
+  await piattaforma(`/api/piattaforma/ristoranti/${ristorante2.id}`, { method: "PATCH", body: { piano: "pro", moduli: ["gift", "fidelity"], prezzo_mensile: "59" } });
+  const conChiavi = await piattaforma(`/api/piattaforma/ristoranti/${ristorante2.id}/integrazioni`, {
+    method: "PUT",
+    body: { integrazioni: { STRIPE_SECRET_KEY: "sk_test_ristorante_due", STRIPE_WEBHOOK_SECRET: "whsec_due" } },
+  });
+  const dettaglio = await conChiavi.json();
+  assert.equal(dettaglio.integrazioni.STRIPE_SECRET_KEY, "••••_due");
+  assert.equal(JSON.stringify(dettaglio).includes("sk_test_ristorante_due"), false, "le chiavi non tornano al browser");
+  assert.equal((await (await titolare2("/api/admin/moduli")).json()).stripe, true);
+  assert.equal((await titolare2("/api/admin/moduli/gift", { method: "PUT", body: { impostazioni: { ...moduli.impostazioni, gift_attive: true } } })).status, 200);
+  const sessione = await (await titolare2("/api/admin/sessione")).json();
+  assert.deepEqual(sessione.ristorante.moduli.sort(), ["fidelity", "gift"]);
+});
+
+test("ruoli: lo staff lavora sul servizio, la sola lettura consulta", async () => {
+  const invito = await (await titolare2("/api/admin/utenti", { method: "POST", body: { email: "staff@due.it", nome: "Marco", ruolo: "staff" } })).json();
+  assert.equal(invito.inviata, true);
+  await attivaAccount(invito.link, "password-dello-staff", "10.70.3.1");
+  const staff = con(await accedi("staff@due.it", "password-dello-staff", "10.70.3.2"));
+  assert.equal((await staff(`/api/admin/agenda?data=${MARTEDI}`)).status, 200);
+  assert.equal((await staff("/api/admin/configurazione", { method: "PUT", body: {} })).status, 403);
+  assert.equal((await staff("/api/admin/clienti.csv")).status, 403);
+  assert.equal((await staff("/api/admin/utenti")).status, 403);
+
+  const l = await (await titolare2("/api/admin/utenti", { method: "POST", body: { email: "socio@due.it", ruolo: "lettura" } })).json();
+  await attivaAccount(l.link, "password-del-socio", "10.70.3.3");
+  const lettura = con(await accedi("socio@due.it", "password-del-socio", "10.70.3.4"));
+  const agenda = await (await lettura(`/api/admin/agenda?data=${MARTEDI}`)).json();
+  assert.equal((await lettura(`/api/admin/prenotazioni/${agenda.prenotazioni[0].id}`, { method: "PATCH", body: { stato: "confermata" } })).status, 403);
+
+  // Il titolare non può restare senza titolari, e chi viene disattivato perde subito l'accesso.
+  const { utenti, io } = await (await titolare2("/api/admin/utenti")).json();
+  assert.equal(utenti.length, 3);
+  assert.equal((await titolare2(`/api/admin/utenti/${io}`, { method: "PATCH", body: { ruolo: "staff" } })).status, 400);
+  const marco = utenti.find((u) => u.email === "staff@due.it");
+  await titolare2(`/api/admin/utenti/${marco.id}`, { method: "PATCH", body: { attivo: false } });
+  assert.equal((await staff(`/api/admin/agenda?data=${MARTEDI}`)).status, 401);
+  assert.equal((await chiama("/api/admin/login", { method: "POST", headers: { "cf-connecting-ip": "10.70.3.5" }, body: { email: "staff@due.it", password: "password-dello-staff" } })).status, 401);
+
+  // Password dimenticata: arriva un link nuovo; la risposta è la stessa anche per email inesistenti.
+  assert.equal((await chiama("/api/accesso/recupera", { method: "POST", headers: { "cf-connecting-ip": "10.70.3.6" }, body: { email: "nessuno@due.it" } })).status, 200);
+  assert.equal((await chiama("/api/accesso/recupera", { method: "POST", headers: { "cf-connecting-ip": "10.70.3.6" }, body: { email: "socio@due.it" } })).status, 200);
+  const reset = await attendiInvio((v) => v.json?.to?.[0] === "socio@due.it" && /reimpostare/.test(v.json.text));
+  await attivaAccount(reset.json.text, "nuova-password-socio", "10.70.3.7");
+  await accedi("socio@due.it", "nuova-password-socio", "10.70.3.8");
+});
+
+test("sospensione, assistenza, esportazione e cancellazione", async () => {
+  const percorso = `/api/piattaforma/ristoranti/${ristorante2.id}`;
+  assert.equal((await piattaforma(`${percorso}/stato`, { method: "POST", body: { stato: "sospeso" } })).status, 400, "serve il motivo");
+  await piattaforma(`${percorso}/stato`, { method: "POST", body: { stato: "sospeso", motivo: "Fattura di novembre non pagata" } });
+  const pubblico = await chiama("/api/ristorante?r=trattoria-due");
+  assert.equal(pubblico.status, 503);
+  assert.equal((await pubblico.json()).sospeso, true);
+  assert.equal((await chiama("/api/ristorante")).status, 200, "la demo continua a funzionare");
+  const s = await (await titolare2("/api/admin/sessione")).json();
+  assert.equal(s.ristorante.stato, "sospeso");
+  assert.equal(s.ristorante.motivo, "Fattura di novembre non pagata");
+  assert.equal((await titolare2(`/api/admin/agenda?data=${MARTEDI}`)).status, 200, "si può consultare");
+  const bloccata = await titolare2("/api/admin/configurazione", { method: "PUT", body: {} });
+  assert.equal(bloccata.status, 403);
+  assert.match((await bloccata.json()).errore, /sospeso/);
+
+  // L'assistenza entra nel pannello del ristorante e lascia traccia nel registro.
+  const a = await piattaforma(`${percorso}/assistenza`, { method: "POST" });
+  const assistenza = con(cookieDa(a));
+  const sa = await (await assistenza("/api/admin/sessione")).json();
+  assert.equal(sa.assistenza, true);
+  assert.equal(sa.nome, "Trattoria Due");
+
+  await piattaforma(`${percorso}/stato`, { method: "POST", body: { stato: "attivo" } });
+  assert.equal((await chiama("/api/ristorante?r=trattoria-due")).status, 200);
+  const dettaglio = await (await piattaforma(percorso)).json();
+  assert.equal(dettaglio.ristorante.stato, "attivo");
+  assert.equal(dettaglio.uso.prenotazioni.totale, 1);
+  assert.ok(dettaglio.registro.some((x) => x.azione === "accesso_assistenza"));
+  assert.ok(dettaglio.registro.some((x) => x.azione === "stato_sospeso" && /novembre/.test(x.dettaglio)));
+  const riepilogo = await (await piattaforma("/api/piattaforma/riepilogo")).json();
+  assert.equal(riepilogo.mrr, 5900, "conta solo gli abbonamenti attivi (la demo costa 0)");
+
+  const esporta = await piattaforma(`${percorso}/esporta`);
+  assert.match(esporta.headers.get("content-disposition"), /ristorante-trattoria-due/);
+  const dati = await esporta.json();
+  assert.equal(dati.dati.prenotazioni_v2.length, 1);
+  assert.equal(dati.utenti.length, 3);
+  assert.equal("integrazioni" in dati.ristorante, false);
+
+  assert.equal((await piattaforma(percorso, { method: "DELETE", body: { conferma: "trattoria-due" } })).status, 409, "prima va disattivato");
+  await piattaforma(`${percorso}/stato`, { method: "POST", body: { stato: "disattivato" } });
+  assert.equal((await chiama("/api/ristorante?r=trattoria-due")).status, 404);
+  assert.equal((await chiama("/api/admin/login", { method: "POST", headers: { "cf-connecting-ip": "10.70.4.1" }, body: { email: "anna@due.it", password: "una-password-lunga" } })).status, 403);
+  assert.equal((await piattaforma(percorso, { method: "DELETE", body: { conferma: "sbagliato" } })).status, 400);
+  assert.equal((await piattaforma(percorso, { method: "DELETE", body: { conferma: "trattoria-due" } })).status, 200);
+  assert.equal((await piattaforma(percorso)).status, 404);
+  assert.equal((await (await piattaforma("/api/piattaforma/riepilogo")).json()).totale, 1);
 });
 
 test("dopo il logout il cookie viene cancellato", async () => {

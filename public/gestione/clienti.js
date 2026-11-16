@@ -1,4 +1,4 @@
-import { OCCASIONI, ORIGINI, STATI, api, apriDialogo, avviso, chiudiDialogo, h, numeroWhatsApp, persone, testoData } from "./comune.js";
+import { OCCASIONI, ORIGINI, STATI, api, apriDialogo, avviso, chiudiDialogo, h, numeroWhatsApp, persone, testoData, puo } from "./comune.js";
 
 const SEGMENTI = {
   tutti: ["Tutti", "Tutti i clienti riconosciuti dal telefono o dall'email."],
@@ -190,7 +190,7 @@ export async function vistaClienti(contenitore) {
   const cerca = h("input", { type: "search", placeholder: "Nome, telefono, email o etichetta", "aria-label": "Cerca un cliente" });
   const filtri = h("div", { class: "filtri", role: "group", "aria-label": "Gruppi di clienti" });
   const spiegazione = h("p", { class: "legenda" });
-  const esporta = h("a", { class: "secondario pulsante-link", download: "" }, "Esporta CSV");
+  const esporta = h("a", { class: "secondario pulsante-link", download: "", hidden: !puo("esportare") }, "Esporta CSV");
   const elenco = h("div", { class: "elenco-clienti", "aria-live": "polite" });
   let segmento = "tutti";
   let timer;

@@ -44,19 +44,28 @@ export async function riceviWebhook(request, env) {
         const quando = /^\d+$/.test(m.timestamp ?? "") ? new Date(Number(m.timestamp) * 1000).toISOString() : adesso;
         istruzioni.push(
           env.DB.prepare(
-            `INSERT OR IGNORE INTO whatsapp_messaggi (id, direzione, numero, nome, testo, stato, creato_il, aggiornato_il)
-             VALUES (?, 'in', ?, ?, ?, 'ricevuto', ?, ?)`,
-          ).bind(m.id.slice(0, 200), `+${m.from.replace(/\D/g, "")}`, String(nomi.get(m.from) ?? "").slice(0, 80), String(testo).slice(0, 1000), quando, adesso),
+            `INSERT OR IGNORE INTO whatsapp_messaggi (id, direzione, numero, nome, testo, stato, creato_il, aggiornato_il, ristorante_id)
+             VALUES (?, 'in', ?, ?, ?, 'ricevuto', ?, ?, ?)`,
+          ).bind(
+            m.id.slice(0, 200),
+            `+${m.from.replace(/\D/g, "")}`,
+            String(nomi.get(m.from) ?? "").slice(0, 80),
+            String(testo).slice(0, 1000),
+            quando,
+            adesso,
+            env.RID,
+          ),
         );
       }
       for (const s of v.statuses ?? []) {
         if (typeof s.id !== "string" || typeof s.status !== "string") continue;
         const errore = s.errors?.[0]?.title ? `: ${s.errors[0].title}` : "";
         istruzioni.push(
-          env.DB.prepare("UPDATE whatsapp_messaggi SET stato = ?, aggiornato_il = ? WHERE id = ? AND direzione = 'out'").bind(
+          env.DB.prepare("UPDATE whatsapp_messaggi SET stato = ?, aggiornato_il = ? WHERE id = ? AND direzione = 'out' AND ristorante_id = ?").bind(
             `${s.status}${errore}`.slice(0, 120),
             adesso,
             s.id.slice(0, 200),
+            env.RID,
           ),
         );
       }
@@ -73,14 +82,14 @@ export async function statoWhatsApp(url, env) {
     env.DB.prepare(
       `SELECT w.numero, w.nome, w.testo, w.creato_il, c.nome AS cliente
        FROM whatsapp_messaggi w
-       LEFT JOIN clienti c ON c.tel_norm = substr(w.numero, CASE WHEN w.numero LIKE '+39%' THEN 4 ELSE 2 END)
-       WHERE w.direzione = 'in' ORDER BY w.creato_il DESC LIMIT 30`,
-    ),
+       LEFT JOIN clienti c ON c.ristorante_id = w.ristorante_id AND c.tel_norm = substr(w.numero, CASE WHEN w.numero LIKE '+39%' THEN 4 ELSE 2 END)
+       WHERE w.ristorante_id = ? AND w.direzione = 'in' ORDER BY w.creato_il DESC LIMIT 30`,
+    ).bind(env.RID),
     env.DB.prepare(
       `SELECT w.numero, w.stato, w.creato_il, w.aggiornato_il, p.nome AS cliente
        FROM whatsapp_messaggi w LEFT JOIN prenotazioni_v2 p ON p.id = w.prenotazione_id
-       WHERE w.direzione = 'out' ORDER BY w.creato_il DESC LIMIT 30`,
-    ),
+       WHERE w.ristorante_id = ? AND w.direzione = 'out' ORDER BY w.creato_il DESC LIMIT 30`,
+    ).bind(env.RID),
   ]);
   return json({
     configurazione: {
@@ -94,7 +103,7 @@ export async function statoWhatsApp(url, env) {
       recensioni_automatiche: attivi.whatsapp_recensione,
       modelli: attivi.whatsapp_modelli,
     },
-    webhook_url: `${url.origin}/api/whatsapp/webhook`,
+    webhook_url: `${url.origin}/api/whatsapp/webhook/${env.SLUG}`,
     ricevuti: ricevuti.results,
     inviati: inviati.results,
   });

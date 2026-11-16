@@ -1,7 +1,7 @@
 import { ALTRE_LINGUE } from "./lingue.js";
 import { MODELLI_WHATSAPP, PARAMETRI_WHATSAPP, canaliAttivi } from "./notifiche.js";
 import { stripeAttivo } from "./pagamenti.js";
-import { ErroreRichiesta, intero, json, leggiImpostazioni, leggiJson, testo } from "./util.js";
+import { ErroreRichiesta, intero, json, leggiImpostazioni, leggiJson, salvaImpostazione, testo } from "./util.js";
 
 const NOMI_LINGUE = { en: "inglese", de: "tedesco", fr: "francese", es: "spagnolo" };
 const si = (v) => (v ? 1 : 0);
@@ -88,17 +88,26 @@ function modelliWhatsApp(imp) {
 
 export async function leggiModuli(env) {
   const imp = await leggiImpostazioni(env);
-  return json({ impostazioni: imp, stripe: stripeAttivo(env), canali: canaliAttivi(env), modelli_whatsapp: modelliWhatsApp(imp) });
+  return json({
+    impostazioni: imp,
+    stripe: stripeAttivo(env),
+    canali: canaliAttivi(env),
+    modelli_whatsapp: modelliWhatsApp(imp),
+    piano: [...(env.MODULI ?? [])],
+  });
 }
 
 export async function salvaModulo(request, env, modulo) {
   const valida = MODULI[modulo];
   if (!valida) throw new ErroreRichiesta("Modulo non trovato.", 404);
+  if (!env.MODULI?.has(modulo === "sondaggio" ? "sondaggi" : modulo)) {
+    throw new ErroreRichiesta("Questa funzione non è inclusa nel tuo piano. Contatta l'assistenza per attivarla.", 403);
+  }
   const corpo = await leggiJson(request);
   const valori = valida(corpo.impostazioni ?? {}, env);
   await env.DB.batch(
     Object.entries(valori).map(([k, v]) =>
-      env.DB.prepare("INSERT INTO impostazioni (chiave, valore) VALUES (?1, ?2) ON CONFLICT (chiave) DO UPDATE SET valore = ?2").bind(k, String(v)),
+      salvaImpostazione(env, k, v),
     ),
   );
   return leggiModuli(env);

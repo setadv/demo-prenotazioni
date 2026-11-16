@@ -1,3 +1,4 @@
+import { linkPubblico } from "./ristoranti.js";
 import { LOCALI, dataIn, linguaValida, modelloIn, oggettoEmail, personeIn } from "./lingue.js";
 import { base64url, giorniDa, hmac, leggiImpostazioni, oraRoma, sha256, spostaData, uguali } from "./util.js";
 
@@ -26,7 +27,7 @@ export async function tokenValido(env, id, token, tokenHash) {
 
 export async function linkPrenotazione(env, origine, id, lingua = "it") {
   const l = lingua && lingua !== "it" ? `&l=${lingua}` : "";
-  return `${origine}/prenotazione#id=${id}&t=${await tokenPrenotazione(env, id)}${l}`;
+  return linkPubblico(env, "/prenotazione", { origine, frammento: `id=${id}&t=${await tokenPrenotazione(env, id)}${l}` });
 }
 
 /** Numero in formato internazionale senza spazi. I cellulari italiani senza prefisso ricevono +39. */
@@ -115,7 +116,7 @@ export function linguaWhatsApp(env, lingua) {
   return approvate.find((l) => l.slice(0, 2).toLowerCase() === lingua) ?? approvate[0] ?? "it";
 }
 
-async function inviaEmail(env, destinatario, oggetto, testo) {
+export async function inviaEmail(env, destinatario, oggetto, testo) {
   const r = await fetch(env.RESEND_ENDPOINT ?? "https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -168,17 +169,17 @@ async function inviaWhatsApp(env, { numero, modello, lingua, parametri, testo, p
   if (id) {
     const adesso = new Date().toISOString();
     await env.DB.prepare(
-      `INSERT OR IGNORE INTO whatsapp_messaggi (id, direzione, numero, testo, stato, prenotazione_id, creato_il, aggiornato_il)
-       VALUES (?, 'out', ?, ?, 'accettato', ?, ?, ?)`,
+      `INSERT OR IGNORE INTO whatsapp_messaggi (id, direzione, numero, testo, stato, prenotazione_id, creato_il, aggiornato_il, ristorante_id)
+       VALUES (?, 'out', ?, ?, 'accettato', ?, ?, ?, ?)`,
     )
-      .bind(id, numero, testo.slice(0, 1000), prenotazioneId, adesso, adesso)
+      .bind(id, numero, testo.slice(0, 1000), prenotazioneId, adesso, adesso, env.RID)
       .run();
   }
 }
 
 async function registra(env, id, canale, esito, dettaglio = "", tipo = "conferma") {
-  await env.DB.prepare("INSERT INTO notifiche (prenotazione_id, canale, esito, dettaglio, creata_il, tipo) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(id, canale, esito, dettaglio.slice(0, 300), new Date().toISOString(), tipo)
+  await env.DB.prepare("INSERT INTO notifiche (prenotazione_id, canale, esito, dettaglio, creata_il, tipo, ristorante_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, canale, esito, dettaglio.slice(0, 300), new Date().toISOString(), tipo, env.RID)
     .run();
 }
 
@@ -257,6 +258,7 @@ export async function inviaConferma(env, imp, p, origine) {
 
 /** Indirizzo pubblico del sito, per i link nei messaggi che partono dal Cron Trigger. */
 export function origineSito(env, imp) {
+  if (env.DOMINIO_BASE && env.SLUG) return `https://${env.SLUG}.${env.DOMINIO_BASE}`;
   return env.SITO_URL?.replace(/\/$/, "") || imp.url_sito || null;
 }
 
@@ -267,7 +269,7 @@ export function origineSito(env, imp) {
 export async function messaggioDopoVisita(env, imp, p, origine) {
   if (imp.sondaggio_attivo && origine) {
     const l = p.lingua && p.lingua !== "it" ? `&l=${p.lingua}` : "";
-    const sondaggio = `${origine}/sondaggio#id=${p.id}&t=${await tokenPer(env, "sondaggio", p.id)}${l}`;
+    const sondaggio = linkPubblico(env, "/sondaggio", { origine, frammento: `id=${p.id}&t=${await tokenPer(env, "sondaggio", p.id)}${l}` });
     return { tipo: "sondaggio", extra: { sondaggio }, testo: componiMessaggio("sondaggio", imp, p, { sondaggio }) };
   }
   if (imp.link_recensioni) return { tipo: "recensione", extra: {}, testo: componiMessaggio("recensione", imp, p) };
@@ -288,11 +290,11 @@ export async function elaboraRecensioni(env, origineRichiesta = null) {
     const { results } = await env.DB.prepare(
       `SELECT p.id, p.codice, p.data, p.ora, p.inizio_min, p.durata, p.persone, p.nome, p.telefono, p.email, p.canale, p.lingua
        FROM prenotazioni_v2 p
-       WHERE p.stato = 'arrivata' AND p.data BETWEEN ? AND ? AND (p.telefono <> '' OR p.email <> '')
+       WHERE p.ristorante_id = ? AND p.stato = 'arrivata' AND p.data BETWEEN ? AND ? AND (p.telefono <> '' OR p.email <> '')
          AND NOT EXISTS (SELECT 1 FROM notifiche n WHERE n.prenotazione_id = p.id AND n.tipo = 'recensione')
        ORDER BY p.data, p.inizio_min LIMIT 25`,
     )
-      .bind(spostaData(adesso.data, -2), adesso.data)
+      .bind(env.RID, spostaData(adesso.data, -2), adesso.data)
       .all();
     let inviate = 0;
     for (const p of results) {
@@ -300,11 +302,11 @@ export async function elaboraRecensioni(env, origineRichiesta = null) {
       if (trascorsi < imp.recensione_dopo_ore * 60) continue;
       // Prenota l'invio in un'unica istruzione: due esecuzioni contemporanee non mandano due messaggi.
       const presa = await env.DB.prepare(
-        `INSERT INTO notifiche (prenotazione_id, canale, esito, dettaglio, creata_il, tipo)
-         SELECT ?1, ?2, 'da_inviare', 'In preparazione', ?3, 'recensione'
+        `INSERT INTO notifiche (prenotazione_id, canale, esito, dettaglio, creata_il, tipo, ristorante_id)
+         SELECT ?1, ?2, 'da_inviare', 'In preparazione', ?3, 'recensione', ?4
          WHERE NOT EXISTS (SELECT 1 FROM notifiche WHERE prenotazione_id = ?1 AND tipo = 'recensione')`,
       )
-        .bind(p.id, p.canale, new Date().toISOString())
+        .bind(p.id, p.canale, new Date().toISOString(), env.RID)
         .run();
       if (!presa.meta.changes) continue;
       const m = await messaggioDopoVisita(env, imp, p, origine);

@@ -9,7 +9,8 @@ Sistema di prenotazione tavoli per un ristorante inventato, su Cloudflare Worker
 - Sondaggio dopo la visita: `/sondaggio`.
 - Lingue: tutte le pagine pubbliche sono in italiano, inglese, tedesco, francese e spagnolo. I messaggi al cliente partono nella lingua in cui ha prenotato.
 - Gestione della prenotazione da parte del cliente: `/prenotazione` (link con token ricevuto alla conferma).
-- Pannello del gestore: `/admin` con agenda, sala in tempo reale, mappa dei tavoli, clienti (CRM), menù con QR code, statistiche e impostazioni.
+- Pannello del gestore: `/admin` con agenda, sala in tempo reale, mappa dei tavoli, clienti (CRM), menù con QR code, statistiche, impostazioni e account.
+- Piattaforma: `/piattaforma`, per chi vende il servizio. Crea ristoranti, li attiva, sospende o disattiva, gestisce piani, accessi e integrazioni.
 
 ## Come funziona la disponibilità
 
@@ -39,6 +40,30 @@ Impostali sia per Produzione sia per Previews Base:
 
 - `ADMIN_PASSWORD`: password dell'area riservata.
 - `SESSION_SECRET`: stringa casuale di almeno 32 caratteri. Usa un valore diverso per Preview e produzione.
+- `SUPERADMIN_EMAIL`: la tua email, per entrare in `/piattaforma`.
+
+## Piattaforma con più ristoranti
+
+Una sola app e un solo database: ogni riga porta l'id del ristorante (`ristorante_id`) e ogni query lo filtra. Il ristorante `demo` (indirizzo `melograno`) è quello di prima.
+
+**Come si trova il ristorante.** Pagine pubbliche: sottodominio di `DOMINIO_BASE` (es. `osteria.prenota.tuodominio.it`), poi `?r=indirizzo` (ricordato con un cookie), poi il ristorante di chi è collegato, poi la demo. I link personali (prenotazione, ordine, buono, sondaggio) portano il ristorante con sé. Pannello: il ristorante è quello della sessione, mai quello dell'indirizzo.
+
+**Stati.** In prova (fino a una data), Attivo, Sospeso (con motivo), Disattivato. Prova scaduta o sospeso: le pagine pubbliche rispondono "non disponibile" e il pannello è in sola consultazione. Disattivato: niente pagine e niente accesso; solo da qui si può cancellare, scrivendo l'indirizzo per conferma.
+
+**Piani e funzioni.** Base (prenotazioni, menù e QR, CRM, recensioni), Pro (+ WhatsApp, fidelity, gift card, sondaggi), Completo (+ asporto e consegna). Le funzioni si scelgono ristorante per ristorante; quelle non incluse restano spente anche se attivate nelle impostazioni. Prezzi di listino in `src/predefiniti.js`.
+
+**Accessi.** Ognuno entra con email e password (PBKDF2). Ruoli: Titolare (tutto, comprese le persone), Staff (servizio: agenda, sala, ordini, clienti, buoni), Sola lettura. Inviti e "password dimenticata" passano da un link monouso a `/accesso` (7 giorni l'invito, 2 ore il recupero), inviato con Resend se configurato, altrimenti mostrato da copiare. La sola password `ADMIN_PASSWORD` funziona ancora, ma solo per il ristorante predefinito.
+
+**Super amministratore.** `/piattaforma` con `SUPERADMIN_EMAIL` e `ADMIN_PASSWORD`, oppure con un account amministratore creato in Amministratori. Da qui: cruscotto (ricavo mensile, prove e pagamenti in scadenza), elenco e ricerca, nuovo ristorante (con sala e orari di partenza e invito al titolare), dati di fatturazione, "pagato fino al", uso degli ultimi 30 giorni, esportazione dei dati in JSON, "Entra come assistenza" (resta nel registro), registro di tutte le operazioni.
+
+**Integrazioni per ristorante.** Le chiavi Stripe e WhatsApp di ogni ristorante si inseriscono nella sua scheda e si salvano cifrate (AES-GCM, chiave da `CHIAVE_CIFRATURA` o da `SESSION_SECRET`). I secret dell'app valgono solo per il ristorante predefinito. Webhook per ristorante: `/api/stripe/webhook/<id>` e `/api/whatsapp/webhook/<indirizzo>`, mostrati nella scheda.
+
+Variabili aggiuntive (facoltative):
+
+- `SUPERADMIN_EMAIL`: email per il primo accesso a `/piattaforma`.
+- `DOMINIO_BASE`: es. `prenota.tuodominio.it`. Serve un dominio su Cloudflare con un record DNS `*.prenota` e una route del Worker `*.prenota.tuodominio.it/*`. Senza, gli indirizzi sono `/?r=indirizzo`.
+- `RISTORANTE_PREDEFINITO`: indirizzo del ristorante mostrato senza sottodominio né `?r=` (di base la demo).
+- `CHIAVE_CIFRATURA`: chiave per cifrare le integrazioni. Se la imposti dopo aver salvato delle chiavi, vanno reinserite.
 
 ## Test locali
 

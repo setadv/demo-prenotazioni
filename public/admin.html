@@ -12,12 +12,16 @@
   <section id="accesso" class="accesso" hidden>
     <h1>Area riservata</h1>
     <form id="login">
+      <label>Email
+        <input type="email" name="email" autocomplete="username" placeholder="nome@ristorante.it">
+      </label>
       <label>Password
         <input type="password" name="password" autocomplete="current-password" required>
       </label>
       <p id="errore-login" class="messaggio" role="alert" hidden></p>
       <button class="azione" type="submit">Accedi</button>
     </form>
+    <p class="link-accesso"><a href="/accesso#recupera">Password dimenticata?</a></p>
     <a href="/">Torna alla pagina di prenotazione</a>
   </section>
 
@@ -35,10 +39,12 @@
         <a href="#sondaggi" data-vista="sondaggi">Sondaggi</a>
         <a href="#statistiche" data-vista="statistiche">Statistiche</a>
         <a href="#impostazioni" data-vista="impostazioni">Impostazioni</a>
+        <a href="#account" data-vista="account">Account</a>
       </nav>
       <button id="esci" class="esci" type="button">Esci</button>
     </header>
     <p id="ambiente" class="ambiente" hidden></p>
+    <p id="stato-account" class="banda" role="status" hidden></p>
     <p id="avviso" class="avviso-pannello" role="status" aria-live="polite"></p>
     <main id="contenuto" class="contenuto"></main>
   </div>

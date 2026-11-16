@@ -18,13 +18,13 @@ export async function caricaGiorno(env, data) {
     env.DB.prepare(
       `SELECT t.id, t.sala_id, t.nome, t.posti_min, t.posti_max, t.online
        FROM tavoli t JOIN sale s ON s.id = t.sala_id
-       WHERE t.attivo = 1 AND s.attiva = 1
+       WHERE t.ristorante_id = ? AND t.attivo = 1 AND s.attiva = 1
        ORDER BY t.posti_max, t.posti_min DESC, t.nome`,
-    ),
+    ).bind(env.RID),
     env.DB.prepare(
       `SELECT id, tavolo_id, inizio_min, durata FROM prenotazioni_v2
-       WHERE data = ? AND stato IN ${SQL_ATTIVI} AND tavolo_id IS NOT NULL`,
-    ).bind(data),
+       WHERE ristorante_id = ? AND data = ? AND stato IN ${SQL_ATTIVI} AND tavolo_id IS NOT NULL`,
+    ).bind(env.RID, data),
   ]);
   return { tavoli: tavoli.results, prenotazioni: prenotazioni.results };
 }
@@ -67,9 +67,9 @@ export async function calcolaDisponibilita(env, data, persone, imp, lingua = "it
   const giorno = giornoSettimana(data);
 
   const [chiusura, orari, promozioni] = await env.DB.batch([
-    env.DB.prepare("SELECT motivo FROM chiusure WHERE data = ?").bind(data),
-    env.DB.prepare("SELECT servizio, inizio, fine FROM orari WHERE giorno = ? ORDER BY inizio").bind(giorno),
-    env.DB.prepare("SELECT giorni, ora_da, ora_a, sconto, attiva FROM promozioni"),
+    env.DB.prepare("SELECT motivo FROM chiusure_r WHERE ristorante_id = ? AND data = ?").bind(env.RID, data),
+    env.DB.prepare("SELECT servizio, inizio, fine FROM orari WHERE ristorante_id = ? AND giorno = ? ORDER BY inizio").bind(env.RID, giorno),
+    env.DB.prepare("SELECT giorni, ora_da, ora_a, sconto, attiva FROM promozioni WHERE ristorante_id = ?").bind(env.RID),
   ]);
   if (chiusura.results.length) {
     const motivo = lingua === "it" ? chiusura.results[0].motivo : "";
@@ -95,8 +95,8 @@ export async function calcolaDisponibilita(env, data, persone, imp, lingua = "it
 
 const INSERISCI = `
 INSERT INTO prenotazioni_v2 (id, codice, token_hash, data, ora, inizio_min, durata, persone, nome, telefono,
-  email, occasione, note, stato, origine, tavolo_id, cliente_id, sconto, creata_il, aggiornata_il, canale, lingua)
-SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20, ?21
+  email, occasione, note, stato, origine, tavolo_id, cliente_id, sconto, creata_il, aggiornata_il, canale, lingua, ristorante_id)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20, ?21, ?22
 WHERE ?16 IS NULL OR NOT EXISTS (
   SELECT 1 FROM prenotazioni_v2 p
   WHERE p.tavolo_id = ?16 AND p.data = ?4 AND p.stato IN ${SQL_ATTIVI}
@@ -136,6 +136,7 @@ export async function inserisciPrenotazione(env, riga, tavoliDaProvare) {
             new Date().toISOString(),
             riga.canale ?? "email",
             riga.lingua ?? "it",
+            env.RID,
           )
           .run();
         if (esito.meta.changes) return tavoloId;
@@ -162,9 +163,9 @@ export async function trovaOCreaCliente(env, dati) {
          marketing_il = CASE WHEN ?3 = 1 THEN COALESCE(marketing_il, ?4) ELSE marketing_il END,
          fidelity = CASE WHEN ?5 = 1 THEN 1 ELSE fidelity END,
          fidelity_il = CASE WHEN ?5 = 1 THEN COALESCE(fidelity_il, ?4) ELSE fidelity_il END
-       WHERE id = ?1`,
+       WHERE id = ?1 AND ristorante_id = ?6`,
     )
-      .bind(id, dati.lingua ?? null, dati.marketing ? 1 : 0, new Date().toISOString(), dati.fidelity ? 1 : 0)
+      .bind(id, dati.lingua ?? null, dati.marketing ? 1 : 0, new Date().toISOString(), dati.fidelity ? 1 : 0, env.RID)
       .run();
   }
   return id;
@@ -177,11 +178,11 @@ async function cercaOCrea(env, { nome, telefono, email }) {
 
   const cerca = async () => {
     if (telNorm) {
-      const c = await env.DB.prepare("SELECT id FROM clienti WHERE tel_norm = ?").bind(telNorm).first();
+      const c = await env.DB.prepare("SELECT id FROM clienti WHERE ristorante_id = ? AND tel_norm = ?").bind(env.RID, telNorm).first();
       if (c) return c.id;
     }
     if (emailNorm) {
-      const c = await env.DB.prepare("SELECT id FROM clienti WHERE email_norm = ?").bind(emailNorm).first();
+      const c = await env.DB.prepare("SELECT id FROM clienti WHERE ristorante_id = ? AND email_norm = ?").bind(env.RID, emailNorm).first();
       if (c) return c.id;
     }
     return null;
@@ -193,21 +194,21 @@ async function cercaOCrea(env, { nome, telefono, email }) {
       `UPDATE clienti SET
          telefono = COALESCE(telefono, ?2), tel_norm = COALESCE(tel_norm, ?3),
          email = COALESCE(email, ?4), email_norm = COALESCE(email_norm, ?5)
-       WHERE id = ?1
-         AND (?3 IS NULL OR NOT EXISTS (SELECT 1 FROM clienti WHERE tel_norm = ?3 AND id <> ?1))
-         AND (?5 IS NULL OR NOT EXISTS (SELECT 1 FROM clienti WHERE email_norm = ?5 AND id <> ?1))`,
+       WHERE id = ?1 AND ristorante_id = ?6
+         AND (?3 IS NULL OR NOT EXISTS (SELECT 1 FROM clienti WHERE ristorante_id = ?6 AND tel_norm = ?3 AND id <> ?1))
+         AND (?5 IS NULL OR NOT EXISTS (SELECT 1 FROM clienti WHERE ristorante_id = ?6 AND email_norm = ?5 AND id <> ?1))`,
     )
-      .bind(esistente, telefono || null, telNorm, email || null, emailNorm)
+      .bind(esistente, telefono || null, telNorm, email || null, emailNorm, env.RID)
       .run();
     return esistente;
   }
 
   const id = crypto.randomUUID();
   await env.DB.prepare(
-    `INSERT OR IGNORE INTO clienti (id, nome, telefono, tel_norm, email, email_norm, creato_il)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO clienti (id, nome, telefono, tel_norm, email, email_norm, creato_il, ristorante_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(id, nome, telefono || null, telNorm, email || null, emailNorm, new Date().toISOString())
+    .bind(id, nome, telefono || null, telNorm, email || null, emailNorm, new Date().toISOString(), env.RID)
     .run();
   return (await cerca()) ?? null;
 }
