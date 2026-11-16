@@ -11,7 +11,7 @@
   "observability": { "enabled": true },
   // Richieste di recensione: controllate ogni 15 minuti.
   "triggers": { "crons": ["*/15 * * * *"] },
-  "vars": { "APP_ENV": "production" },
+  "vars": { "APP_ENV": "production", "SUPERADMIN_EMAIL": "demo@setadv.com" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -21,7 +21,7 @@
     }
   ],
   "previews": {
-    "vars": { "APP_ENV": "preview" },
+    "vars": { "APP_ENV": "preview", "SUPERADMIN_EMAIL": "demo@setadv.com" },
     "d1_databases": [
       {
         "binding": "DB",
