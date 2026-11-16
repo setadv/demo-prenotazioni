@@ -1,3 +1,4 @@
+import { erroreIn } from "./lingue.js";
 import {
   ErroreRichiesta,
   SQL_ATTIVI,
@@ -59,8 +60,8 @@ export function scontoPer(promozioni, giorno, minuti) {
   return migliore;
 }
 
-export async function calcolaDisponibilita(env, data, persone, imp) {
-  if (!dataValida(data)) throw new ErroreRichiesta("Scegli una data valida.");
+export async function calcolaDisponibilita(env, data, persone, imp, lingua = "it") {
+  if (!dataValida(data)) throw new ErroreRichiesta(erroreIn(lingua, "data"));
   const adesso = oraRoma();
   const distanza = giorniDa(adesso.data, data);
   const giorno = giornoSettimana(data);
@@ -71,7 +72,8 @@ export async function calcolaDisponibilita(env, data, persone, imp) {
     env.DB.prepare("SELECT giorni, ora_da, ora_a, sconto, attiva FROM promozioni"),
   ]);
   if (chiusura.results.length) {
-    return { chiuso: true, motivo: chiusura.results[0].motivo || "Il ristorante è chiuso in questa data.", slot: [] };
+    const motivo = lingua === "it" ? chiusura.results[0].motivo : "";
+    return { chiuso: true, motivo: motivo || erroreIn(lingua, "chiuso_data"), slot: [] };
   }
 
   const { tavoli, prenotazioni } = await caricaGiorno(env, data);
@@ -88,13 +90,13 @@ export async function calcolaDisponibilita(env, data, persone, imp) {
       sconto: scontoPer(promozioni.results, giorno, s.minuti),
     };
   });
-  return { chiuso: orari.results.length === 0, motivo: orari.results.length ? "" : "Il ristorante è chiuso in questo giorno.", slot };
+  return { chiuso: orari.results.length === 0, motivo: orari.results.length ? "" : erroreIn(lingua, "chiuso_giorno"), slot };
 }
 
 const INSERISCI = `
 INSERT INTO prenotazioni_v2 (id, codice, token_hash, data, ora, inizio_min, durata, persone, nome, telefono,
-  email, occasione, note, stato, origine, tavolo_id, cliente_id, sconto, creata_il, aggiornata_il, canale)
-SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20
+  email, occasione, note, stato, origine, tavolo_id, cliente_id, sconto, creata_il, aggiornata_il, canale, lingua)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20, ?21
 WHERE ?16 IS NULL OR NOT EXISTS (
   SELECT 1 FROM prenotazioni_v2 p
   WHERE p.tavolo_id = ?16 AND p.data = ?4 AND p.stato IN ${SQL_ATTIVI}
@@ -133,6 +135,7 @@ export async function inserisciPrenotazione(env, riga, tavoliDaProvare) {
             riga.sconto,
             new Date().toISOString(),
             riga.canale ?? "email",
+            riga.lingua ?? "it",
           )
           .run();
         if (esito.meta.changes) return tavoloId;
@@ -146,7 +149,26 @@ export async function inserisciPrenotazione(env, riga, tavoliDaProvare) {
   return false;
 }
 
-export async function trovaOCreaCliente(env, { nome, telefono, email }) {
+/**
+ * Riconosce il cliente da telefono o email, oppure lo crea.
+ * Se il cliente ha dato il consenso alle promozioni lo registra con la data; la lingua segue l'ultima prenotazione.
+ */
+export async function trovaOCreaCliente(env, dati) {
+  const id = await cercaOCrea(env, dati);
+  if (id && (dati.marketing || dati.lingua)) {
+    await env.DB.prepare(
+      `UPDATE clienti SET lingua = COALESCE(?2, lingua),
+         marketing = CASE WHEN ?3 = 1 THEN 1 ELSE marketing END,
+         marketing_il = CASE WHEN ?3 = 1 THEN COALESCE(marketing_il, ?4) ELSE marketing_il END
+       WHERE id = ?1`,
+    )
+      .bind(id, dati.lingua ?? null, dati.marketing ? 1 : 0, new Date().toISOString())
+      .run();
+  }
+  return id;
+}
+
+async function cercaOCrea(env, { nome, telefono, email }) {
   const telNorm = normalizzaTelefono(telefono);
   const emailNorm = email ? email.toLowerCase() : null;
   if (!telNorm && !emailNorm) return null;

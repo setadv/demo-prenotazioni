@@ -1,45 +1,42 @@
+import { applicaTesti, quandoCambia, selettoreLingua, t, testoData } from "./lingue.js";
+
 const $ = (id) => document.getElementById(id);
 const parametri = new URLSearchParams(location.hash.slice(1));
 const id = parametri.get("id") ?? "";
 const token = parametri.get("t") ?? "";
-const ETICHETTE = {
-  in_attesa: "Prenotazione in attesa di conferma",
-  confermata: "Prenotazione confermata",
-  arrivata: "Buon appetito",
-  no_show: "Prenotazione non onorata",
-  annullata: "Prenotazione annullata",
-};
+let ultima = null;
+let erroreChiave = null;
 
-function mostraErrore(testo) {
+function mostraErrore(testo, chiave = null) {
+  erroreChiave = chiave;
   $("caricamento").hidden = true;
-  $("errore").textContent = testo;
+  $("errore").textContent = chiave ? t(chiave) : testo;
   $("errore").hidden = false;
 }
 
 async function chiama(percorso, metodo = "GET") {
-  const r = await fetch(percorso, { method: metodo, headers: { "x-prenotazione-token": token } });
+  const r = await fetch(percorso, { method: metodo, headers: { "x-prenotazione-token": token, "x-lingua": document.documentElement.lang } });
   const dati = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(dati.errore || "Operazione non riuscita. Riprova.");
+  if (!r.ok) throw new Error(dati.errore || t("errore_generico"));
   return dati;
 }
 
 function mostra(p) {
-  const quando = new Intl.DateTimeFormat("it-IT", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(
-    new Date(`${p.data}T12:00:00Z`),
-  );
+  ultima = p;
+  document.title = t("tua_prenotazione");
   $("caricamento").hidden = true;
   $("dettaglio").hidden = false;
   $("ristorante").textContent = p.ristorante.nome;
-  $("titolo").textContent = ETICHETTE[p.stato];
-  $("quando").textContent = `${quando} alle ${p.ora}`;
+  $("titolo").textContent = t(p.stato === "confermata" ? "stato_confermata_titolo" : `stato_${p.stato}`);
+  $("quando").textContent = t("alle", { data: testoData(p.data), ora: p.ora });
   $("quanti").textContent = String(p.persone);
   $("nome").textContent = p.nome;
   $("codice").textContent = p.codice;
   $("riga-sconto").hidden = !p.sconto;
-  $("sconto").textContent = `${p.sconto}% sul conto alla carta`;
+  $("sconto").textContent = t("sconto_valore", { n: p.sconto });
   $("riga-note").hidden = !p.note;
   $("note").textContent = p.note;
-  $("contatti").textContent = `${p.ristorante.indirizzo}. Per modifiche chiama il ${p.ristorante.telefono}.`;
+  $("contatti").textContent = t("contatti", { indirizzo: p.ristorante.indirizzo, telefono: p.ristorante.telefono });
   $("area-annulla").hidden = !p.annullabile;
   $("conferma-annulla").hidden = true;
   $("annulla").hidden = false;
@@ -47,7 +44,7 @@ function mostra(p) {
 
 async function carica() {
   if (!/^[0-9a-f-]{36}$/.test(id) || !token) {
-    mostraErrore("Link non valido. Usa il link che hai ricevuto dopo la prenotazione.");
+    mostraErrore("", "link_non_valido");
     return;
   }
   try {
@@ -79,4 +76,11 @@ $("annulla-si").addEventListener("click", async () => {
   }
 });
 
+quandoCambia(() => {
+  if (ultima) mostra(ultima);
+  if (erroreChiave) mostraErrore("", erroreChiave);
+});
+
+selettoreLingua($("scelta-lingua"));
+applicaTesti();
 carica();

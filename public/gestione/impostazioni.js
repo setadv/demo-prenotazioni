@@ -19,6 +19,25 @@ async function ridimensiona(file, maxLato, maxByte) {
   throw new Error(`L'immagine è ancora troppo pesante: usane una più leggera di ${Math.round(maxByte / 1024)} KB.`);
 }
 
+const LINGUE = { en: "Inglese", de: "Tedesco", fr: "Francese", es: "Spagnolo" };
+
+/** Campi tradotti di un testo (descrizione, messaggi), raccolti in un riquadro che si apre. */
+function traduzioni(titolo, chiave, valori, { max = 600, righe = 3, aiuto } = {}) {
+  return h(
+    "details",
+    { class: "traduzioni" },
+    h("summary", {}, titolo),
+    aiuto ? h("p", { class: "aiuto" }, aiuto) : null,
+    Object.entries(LINGUE).map(([l, nome]) => h("label", {}, nome, h("textarea", { name: `${chiave}_${l}`, rows: righe, maxlength: max, value: valori[`${chiave}_${l}`] ?? "" }))),
+  );
+}
+
+const MODELLI_WHATSAPP = {
+  conferma:
+    "Ciao {{1}}, la tua prenotazione da {{2}} per {{3}} {{4}} alle {{5}} è confermata. Codice {{6}}. Per vederla o annullarla: {{7}}",
+  recensione: "Ciao {{1}}, grazie per essere stati da {{2}}! Se ti va, lasciaci una recensione: ci aiuta molto. {{3}}",
+};
+
 export async function vistaImpostazioni(contenitore) {
   let conf = await api("/api/admin/configurazione");
   let modificato = false;
@@ -117,6 +136,10 @@ export async function vistaImpostazioni(contenitore) {
           campo("Descrizione", "descrizione", i.descrizione, { maxlength: 500, multiriga: true, largo: true }),
           campo("Prezzo medio a persona (€)", "prezzo_medio", i.prezzo_medio, { type: "number", min: 0, max: 500 }),
         ),
+        traduzioni("Descrizione nelle altre lingue", "descrizione", i, {
+          max: 500,
+          aiuto: "La pagina di prenotazione e il menù sono in italiano, inglese, tedesco, francese e spagnolo. Se lasci vuoto, il cliente vede il testo italiano.",
+        }),
       ),
       h(
         "section",
@@ -168,6 +191,8 @@ export async function vistaImpostazioni(contenitore) {
         h("button", { type: "button", class: "secondario", onclick: () => { promozioni.append(rigaPromo()); segna(); } }, "Aggiungi una promozione"),
       ),
       sezioneMessaggi(),
+      sezioneRecensioni(),
+      sezioneWhatsApp(),
       sezioneImmagini(),
       errore,
       h("div", { class: "barra-salva" }, salva),
@@ -189,7 +214,7 @@ export async function vistaImpostazioni(contenitore) {
         { class: "canali-stato" },
         statoCanale(c.email, "Email", "Per l'invio automatico servono un account Resend e i secret RESEND_API_KEY ed EMAIL_MITTENTE."),
         statoCanale(c.sms, "SMS", "Per l'invio automatico servono un account Twilio e i secret TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_NUMERO."),
-        statoCanale(false, "WhatsApp", "L'invio automatico richiede WhatsApp Business con modelli approvati da Meta."),
+        statoCanale(c.whatsapp, "WhatsApp", "Per l'invio automatico configura l'API WhatsApp Business: trovi i passaggi più sotto, nella sezione WhatsApp."),
       ),
       h(
         "label",
@@ -198,6 +223,118 @@ export async function vistaImpostazioni(contenitore) {
         h("textarea", { name: "messaggio_conferma", rows: 4, maxlength: 600, value: conf.impostazioni.messaggio_conferma ?? "" }),
         h("span", { class: "aiuto" }, "Puoi usare: {nome}, {ristorante}, {persone}, {data}, {ora}, {codice}, {link}, {telefono}, {indirizzo}. Lascia {link}: serve al cliente per vedere o annullare."),
       ),
+      traduzioni("Messaggio nelle altre lingue", "messaggio_conferma", conf.impostazioni, {
+        aiuto: "Il cliente riceve il messaggio nella lingua in cui ha prenotato. Data e numero di persone vengono scritti nella sua lingua.",
+      }),
+    );
+  }
+
+  function sezioneRecensioni() {
+    const i = conf.impostazioni;
+    return h(
+      "section",
+      { class: "blocco" },
+      h("h2", {}, "Richiesta di recensione"),
+      h(
+        "p",
+        { class: "legenda" },
+        "Qualche ora dopo la visita il cliente riceve un messaggio con il link per lasciare una recensione, una sola volta. Parte solo per le prenotazioni segnate come Arrivati e sul canale scelto dal cliente: chi ha scelto WhatsApp senza invio automatico compare in agenda con il pulsante per mandarlo a mano.",
+      ),
+      h(
+        "div",
+        { class: "campi" },
+        campo("Link per le recensioni", "link_recensioni", i.link_recensioni, { type: "url", maxlength: 400, largo: true, placeholder: "https://g.page/r/.../review" },
+          "Su Google: apri il Profilo dell'attività, scegli Chiedi recensioni e copia il link. Va bene anche il link di TripAdvisor o di un altro sito."),
+        h(
+          "label",
+          { class: "spunta largo" },
+          h("input", { type: "checkbox", name: "recensioni_automatiche", checked: Boolean(i.recensioni_automatiche) }),
+          h("span", {}, "Invia la richiesta in automatico. Se disattivato, la chiedi tu dall'agenda con un clic."),
+        ),
+        campo("Ore dopo la fine del pasto", "recensione_dopo_ore", i.recensione_dopo_ore, { type: "number", min: 1, max: 72 }, "La fine del pasto è l'orario più la durata del tavolo."),
+        h(
+          "label",
+          { class: "largo" },
+          "Testo del messaggio",
+          h("textarea", { name: "messaggio_recensione", rows: 3, maxlength: 600, value: i.messaggio_recensione ?? "" }),
+          h("span", { class: "aiuto" }, "Puoi usare: {nome}, {ristorante}, {data}, {recensione}. {recensione} è il link e deve restare nel testo. Lo stesso link va a tutti i clienti: Google non permette di invitare solo quelli soddisfatti."),
+        ),
+      ),
+      traduzioni("Messaggio nelle altre lingue", "messaggio_recensione", i),
+    );
+  }
+
+  function sezioneWhatsApp() {
+    const box = h("div", { class: "stato-whatsapp" }, h("p", { class: "legenda" }, "Carico lo stato di WhatsApp."));
+    const copiaTesto = (testo) => async (e) => {
+      try {
+        await navigator.clipboard.writeText(testo);
+        e.target.textContent = "Copiato";
+      } catch {
+        e.target.textContent = "Copia non riuscita";
+      }
+    };
+    api("/api/admin/whatsapp")
+      .then((w) => {
+        const c = w.configurazione;
+        const voce = (ok, testo) => h("li", { class: ok ? "ok" : "manca" }, h("span", { class: "segno-stato", "aria-hidden": "true" }, ok ? "✓" : "–"), testo);
+        const ora = (iso) => new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" }).format(new Date(iso));
+        box.replaceChildren(
+          h(
+            "ul",
+            { class: "lista-controllo" },
+            voce(c.token && c.numero, "Numero collegato all'API Cloud (secret WHATSAPP_TOKEN e WHATSAPP_PHONE_ID)"),
+            voce(Boolean(c.modello_conferma), c.modello_conferma ? `Modello di conferma: ${c.modello_conferma}` : "Modello di conferma approvato (secret WHATSAPP_MODELLO_CONFERMA)"),
+            voce(Boolean(c.modello_recensione), c.modello_recensione ? `Modello di recensione: ${c.modello_recensione}` : "Modello di recensione approvato (secret WHATSAPP_MODELLO_RECENSIONE)"),
+            voce(c.webhook, "Webhook per ricevere risposte e stati di consegna (secret WHATSAPP_VERIFY_TOKEN e WHATSAPP_APP_SECRET)"),
+          ),
+          h("p", { class: "legenda" }, `Lingue dei modelli approvati: ${c.lingue}. Per le altre lingue si usa il primo modello dell'elenco.`),
+          h(
+            "div",
+            { class: "copia-riga" },
+            h("label", { class: "cresce" }, "URL del webhook da inserire nell'app Meta", h("input", { value: w.webhook_url, readonly: true })),
+            h("button", { type: "button", class: "secondario", onclick: copiaTesto(w.webhook_url) }, "Copia"),
+          ),
+          h(
+            "details",
+            { class: "traduzioni" },
+            h("summary", {}, "Testi dei modelli da far approvare a Meta"),
+            h("p", { class: "aiuto" }, "In WhatsApp Manager crea due modelli in italiano con questi testi. I numeri tra parentesi sono i dati che l'app inserisce, in quest'ordine."),
+            Object.entries(MODELLI_WHATSAPP).map(([k, testo]) =>
+              h(
+                "div",
+                { class: "modello-wa" },
+                h("p", {}, h("strong", {}, k === "conferma" ? "Conferma (categoria Utilità)" : "Richiesta di recensione")),
+                h("pre", {}, testo),
+                h("button", { type: "button", class: "secondario", onclick: copiaTesto(testo) }, "Copia il testo"),
+              ),
+            ),
+          ),
+          h("h3", {}, "Ultimi messaggi ricevuti"),
+          w.ricevuti.length
+            ? h("ul", { class: "messaggi-wa" }, w.ricevuti.map((m) => h("li", {}, h("strong", {}, m.cliente || m.nome || m.numero), h("span", { class: "legenda" }, ` ${ora(m.creato_il)}`), h("p", {}, m.testo))))
+            : h("p", { class: "legenda" }, c.webhook ? "Nessun messaggio ricevuto finora." : "Si vedono qui quando il webhook è configurato."),
+          w.inviati.length
+            ? h(
+                "details",
+                { class: "traduzioni" },
+                h("summary", {}, `Ultimi ${w.inviati.length} messaggi inviati in automatico`),
+                h("ul", { class: "messaggi-wa" }, w.inviati.map((m) => h("li", {}, h("strong", {}, m.cliente || m.numero), h("span", { class: "legenda" }, ` ${ora(m.creato_il)}, stato: ${m.stato}`)))),
+              )
+            : null,
+        );
+      })
+      .catch((e) => box.replaceChildren(h("p", { class: "messaggio" }, e.message)));
+    return h(
+      "section",
+      { class: "blocco" },
+      h("h2", {}, "WhatsApp"),
+      h(
+        "p",
+        { class: "legenda" },
+        "Senza configurazione i messaggi WhatsApp partono dall'agenda con un clic, dal telefono del ristorante. Con l'API Cloud di Meta conferme e richieste di recensione partono da sole e le risposte dei clienti compaiono qui.",
+      ),
+      box,
     );
   }
 
@@ -279,6 +416,13 @@ export async function vistaImpostazioni(contenitore) {
         max_persone_online: Number(f.get("max_persone_online")),
         conferma_automatica: f.get("conferma_automatica") === "on",
         messaggio_conferma: f.get("messaggio_conferma"),
+        link_recensioni: f.get("link_recensioni"),
+        recensioni_automatiche: f.get("recensioni_automatiche") === "on",
+        recensione_dopo_ore: Number(f.get("recensione_dopo_ore")),
+        messaggio_recensione: f.get("messaggio_recensione"),
+        ...Object.fromEntries(
+          Object.keys(LINGUE).flatMap((l) => ["descrizione", "messaggio_conferma", "messaggio_recensione"].map((k) => [`${k}_${l}`, f.get(`${k}_${l}`) ?? ""])),
+        ),
       },
       orari: righe(orari, (r) => ({ giorno: Number(val(r, "giorno")), servizio: val(r, "servizio"), inizio: val(r, "inizio"), fine: val(r, "fine") })),
       chiusure: righe(chiusure, (r) => ({ data: val(r, "data"), motivo: val(r, "motivo") })),

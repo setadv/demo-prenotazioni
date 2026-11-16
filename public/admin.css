@@ -438,3 +438,110 @@ label.piccola, legend.piccola { font-size: .85rem; color: var(--grigio); font-we
 @media (prefers-reduced-motion: reduce) {
   .avviso-pannello { transition: none; }
 }
+
+/* Collegamenti con l'aspetto di un pulsante */
+.pulsante-link { display: inline-flex; align-items: center; color: var(--bottiglia); text-decoration: none; }
+.pulsanti-testata { flex-wrap: wrap; align-items: center; }
+.spingi-sinistra { margin-right: auto; }
+.dialogo:has(.dialogo-largo) { width: min(900px, calc(100vw - 32px)); }
+
+/* Traduzioni e riquadri che si aprono */
+.traduzioni { margin-top: 1rem; padding: .6rem .9rem; background: var(--celadon); border-radius: 6px; }
+.traduzioni summary { font-weight: 600; cursor: pointer; }
+.traduzioni[open] summary { margin-bottom: .5rem; }
+.traduzioni label { margin-top: .6rem; }
+.traduzioni .aiuto { margin: .2rem 0 0; }
+.lingua-traduzione { display: grid; gap: .3rem; margin: .75rem 0 0; padding: .6rem .75rem; background: var(--bianco); border: 0; border-radius: 4px; }
+.lingua-traduzione label { margin-top: .2rem; }
+
+/* Editor del menù */
+.editor-menu { display: grid; gap: 1rem; }
+.editor-menu .riepilogo { margin: 0; }
+.testa-categoria { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
+.testa-categoria h2 { margin: 0; }
+.voci-menu { display: grid; gap: 0; margin: 0 0 .75rem; padding: 0; list-style: none; }
+.voce-menu { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; padding: .7rem 0; border-bottom: 1px solid var(--celadon); }
+.voce-menu-testo { flex: 1 1 320px; min-width: 0; }
+.voce-menu-testo p { margin: 0; }
+.voce-menu-nome { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
+.voce-menu-nome span { font: 400 1.05rem "Young Serif", Georgia, serif; }
+.voce-menu.esaurito .voce-menu-nome strong { text-decoration: line-through; color: var(--grigio); }
+.voce-menu-azioni { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.voce-menu-azioni button { padding: .35rem .65rem; font-size: .9rem; }
+.interruttore { align-items: center; margin-right: .4rem; font-size: .9rem; }
+.aggiungi-categoria { justify-self: start; }
+.griglia-spunte { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .35rem 1rem; margin: 1rem 0 0; padding: 0; border: 0; }
+.griglia-spunte legend { grid-column: 1 / -1; margin-bottom: .35rem; font-family: inherit; }
+.modulo-piatto .campi { grid-template-columns: 1fr 1fr; }
+
+/* QR code */
+.griglia-qr { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .75rem; max-height: 55vh; margin: 1rem 0 0; overflow-y: auto; }
+.qr-scheda { display: grid; justify-items: center; gap: .4rem; margin: 0; padding: .9rem; text-align: center; background: var(--bianco); border-radius: 6px; }
+.qr-scheda img { width: 140px; height: 140px; image-rendering: pixelated; }
+.qr-scheda figcaption { display: grid; gap: .15rem; font-size: .9rem; }
+.qr-scheda figcaption span { color: var(--grigio); }
+.qr-scheda a { color: var(--melograno); font-weight: 600; }
+.foglio-stampa { display: none; }
+
+@media print {
+  body.stampa-qr { background: #fff; }
+  body.stampa-qr > :not(#stampa) { display: none !important; }
+  body.stampa-qr .foglio-stampa { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+  .segnaposto {
+    display: grid;
+    justify-items: center;
+    gap: 2mm;
+    padding: 8mm 6mm;
+    text-align: center;
+    color: #000;
+    border: 0.4mm dashed #999;
+    break-inside: avoid;
+  }
+  .segnaposto img { width: 55mm; height: 55mm; }
+  .segnaposto p { margin: 0; }
+  .segnaposto-locale { font: 400 14pt "Young Serif", Georgia, serif; }
+  .segnaposto-titolo { font: 400 22pt "Young Serif", Georgia, serif; }
+  .segnaposto-invito { font-size: 10pt; }
+}
+
+/* CRM */
+.etichetta.vip { background: var(--bottiglia); color: var(--bianco); font-weight: 600; }
+.etichetta.consenso { background: #e2eefb; color: #1f4f7a; }
+.etichette.modificabili .etichetta { display: inline-flex; align-items: center; gap: .3rem; }
+.togli { padding: 0 .2rem; font-size: 1rem; line-height: 1; color: inherit; background: none; border: 0; }
+.editor-etichette { display: grid; gap: .5rem; }
+.riga-input { display: flex; gap: .4rem; align-items: center; }
+.riga-input > * { flex: 1; }
+.riga-input > button { flex: none; }
+.campo-gruppo { margin: 0 0 1rem; padding: 0; border: 0; }
+.campo-gruppo legend { margin-bottom: .3rem; font-family: inherit; }
+.scheda-cliente .contatti { margin: -.5rem 0 1rem; }
+.cifre-cliente { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem; margin: 0 0 1rem; }
+.cifre-cliente div { padding: .5rem .6rem; background: var(--bianco); border-radius: 4px; }
+.cifre-cliente dt { font-size: .8rem; color: var(--grigio); }
+.cifre-cliente dd { margin: 0; font: 400 1.2rem "Young Serif", Georgia, serif; }
+.titolo-storico { margin: 1.5rem 0 .4rem; font-size: 1.2rem; }
+.storico { display: grid; gap: .3rem; margin: 0; padding: 0; list-style: none; }
+.storico li { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .8rem; padding: .45rem .6rem; background: var(--bianco); border-radius: 4px; }
+.storico .legenda { margin: 0; }
+
+/* WhatsApp */
+.lista-controllo { display: grid; gap: .3rem; margin: 0 0 .75rem; padding: 0; list-style: none; }
+.lista-controllo li { display: flex; gap: .5rem; }
+.segno-stato { flex: none; width: 1.3rem; height: 1.3rem; font-size: .85rem; font-weight: 700; line-height: 1.3rem; text-align: center; border-radius: 50%; }
+.lista-controllo .ok .segno-stato { color: var(--bianco); background: var(--verde); }
+.lista-controllo .manca .segno-stato { color: var(--grigio); background: var(--celadon-scuro); }
+.copia-riga { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; margin: .75rem 0; }
+.copia-riga .cresce { flex: 1 1 320px; }
+.modello-wa { margin-top: .75rem; }
+.modello-wa p { margin: 0 0 .3rem; }
+.modello-wa pre { margin: 0 0 .4rem; padding: .6rem .75rem; font: .9rem/1.45 ui-monospace, monospace; white-space: pre-wrap; background: var(--bianco); border-radius: 4px; }
+.stato-whatsapp h3 { margin: 1.25rem 0 .4rem; font-size: 1.15rem; }
+.messaggi-wa { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; }
+.messaggi-wa li { padding: .5rem .7rem; background: var(--celadon); border-radius: 4px; }
+.messaggi-wa p { margin: .2rem 0 0; }
+
+@media (max-width: 640px) {
+  .cifre-cliente { grid-template-columns: 1fr 1fr; }
+  .modulo-piatto .campi { grid-template-columns: 1fr; }
+}

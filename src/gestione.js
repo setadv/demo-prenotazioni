@@ -1,5 +1,15 @@
 import { candidati, caricaGiorno, inserisciPrenotazione, trovaOCreaCliente } from "./disponibilita.js";
-import { CANALI, canaliAttivi, componiMessaggio, inviaConferma, linkPrenotazione, registraInvioManuale } from "./notifiche.js";
+import { ALTRE_LINGUE, LINGUE } from "./lingue.js";
+import {
+  CANALI,
+  TIPI,
+  canaliAttivi,
+  componiMessaggio,
+  elaboraRecensioni,
+  inviaConferma,
+  linkPrenotazione,
+  registraInvioManuale,
+} from "./notifiche.js";
 import {
   ErroreRichiesta,
   ORIGINI,
@@ -24,21 +34,32 @@ const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const FORME = ["tondo", "quadrato", "rettangolo"];
 
 const CAMPI_PRENOTAZIONE = `p.id, p.codice, p.data, p.ora, p.inizio_min, p.durata, p.persone, p.nome, p.telefono,
-  p.email, p.occasione, p.note, p.note_interne, p.stato, p.origine, p.tavolo_id, p.cliente_id, p.sconto, p.creata_il, p.canale`;
+  p.email, p.occasione, p.note, p.note_interne, p.stato, p.origine, p.tavolo_id, p.cliente_id, p.sconto, p.creata_il, p.canale, p.lingua`;
+
+const separa = (riga) => {
+  if (!riga) return null;
+  const [esito, canale, ...resto] = riga.split("|");
+  return { esito, canale, dettaglio: resto.join("|") };
+};
 
 function richiediData(valore) {
   if (!dataValida(valore)) throw new ErroreRichiesta("Scegli una data valida.");
   return valore;
 }
 
-export async function agenda(url, env) {
+export async function agenda(url, env, ctx) {
   const data = richiediData(url.searchParams.get("data"));
+  // Le richieste di recensione partono anche da qui: funzionano pure dove il Cron Trigger non gira (Preview).
+  ctx?.waitUntil(elaboraRecensioni(env));
   const [prenotazioni, tavoli, sale] = await env.DB.batch([
     env.DB.prepare(
-      `SELECT ${CAMPI_PRENOTAZIONE}, t.nome AS tavolo, c.note AS note_cliente,
+      `SELECT ${CAMPI_PRENOTAZIONE}, t.nome AS tavolo, c.note AS note_cliente, c.etichette, c.compleanno,
          (SELECT COUNT(*) FROM prenotazioni_v2 x WHERE x.cliente_id = p.cliente_id AND x.stato = 'arrivata' AND x.id <> p.id) AS visite,
          (SELECT COUNT(*) FROM prenotazioni_v2 x WHERE x.cliente_id = p.cliente_id AND x.stato = 'no_show' AND x.id <> p.id) AS no_show,
-         (SELECT n.esito || '|' || n.canale || '|' || n.dettaglio FROM notifiche n WHERE n.prenotazione_id = p.id ORDER BY n.id DESC LIMIT 1) AS notifica
+         (SELECT n.esito || '|' || n.canale || '|' || n.dettaglio FROM notifiche n
+           WHERE n.prenotazione_id = p.id AND n.tipo = 'conferma' ORDER BY n.id DESC LIMIT 1) AS notifica,
+         (SELECT n.esito || '|' || n.canale || '|' || n.dettaglio FROM notifiche n
+           WHERE n.prenotazione_id = p.id AND n.tipo = 'recensione' ORDER BY n.id DESC LIMIT 1) AS notifica_recensione
        FROM prenotazioni_v2 p
        LEFT JOIN tavoli t ON t.id = p.tavolo_id
        LEFT JOIN clienti c ON c.id = p.cliente_id
@@ -54,12 +75,18 @@ export async function agenda(url, env) {
   const imp = await leggiImpostazioni(env);
   const elenco = await Promise.all(
     prenotazioni.results.map(async (p) => {
-      const [esito, canale, dettaglio] = p.notifica ? p.notifica.split("|") : [];
-      const conMessaggio = p.stato === "confermata" && (p.telefono || p.email);
+      const contattabile = Boolean(p.telefono || p.email);
+      const conMessaggio = p.stato === "confermata" && contattabile;
+      const conRecensione = p.stato === "arrivata" && contattabile && Boolean(imp.link_recensioni);
       return {
         ...p,
-        notifica: p.notifica ? { esito, canale, dettaglio } : null,
-        messaggio: conMessaggio ? componiMessaggio(imp.messaggio_conferma, imp, p, await linkPrenotazione(env, url.origin, p.id)) : null,
+        etichette: p.etichette ? p.etichette.split(",") : [],
+        notifica: separa(p.notifica),
+        notifica_recensione: separa(p.notifica_recensione),
+        messaggio: conMessaggio
+          ? componiMessaggio("conferma", imp, p, { link: await linkPrenotazione(env, url.origin, p.id, p.lingua) })
+          : null,
+        messaggio_recensione: conRecensione ? componiMessaggio("recensione", imp, p) : null,
       };
     }),
   );
@@ -111,9 +138,10 @@ export async function nuovaPrenotazioneGestore(request, env, ctx) {
     note,
     stato: origine === "walk_in" ? "arrivata" : "confermata",
     origine,
-    cliente_id: await trovaOCreaCliente(env, { nome, telefono, email }),
+    cliente_id: await trovaOCreaCliente(env, { nome, telefono, email, lingua: LINGUE.includes(corpo.lingua) ? corpo.lingua : null }),
     sconto: 0,
     canale: CANALI.includes(corpo.canale) ? corpo.canale : email ? "email" : "sms",
+    lingua: LINGUE.includes(corpo.lingua) ? corpo.lingua : "it",
   };
 
   let tavolo = daProvare.length ? await inserisciPrenotazione(env, riga, daProvare) : false;
@@ -162,7 +190,7 @@ export async function modificaPrenotazione(request, env, id, ctx) {
     throw new ErroreRichiesta("Il tavolo è già occupato in quell'orario da un'altra prenotazione.", 409);
   }
   if (stato === "confermata" && ["in_attesa", "annullata", "no_show"].includes(attuale.stato)) {
-    const p = await env.DB.prepare("SELECT id, codice, data, ora, persone, nome, telefono, email, canale FROM prenotazioni_v2 WHERE id = ?")
+    const p = await env.DB.prepare("SELECT id, codice, data, ora, persone, nome, telefono, email, canale, lingua FROM prenotazioni_v2 WHERE id = ?")
       .bind(id)
       .first();
     if (p.telefono || p.email) ctx.waitUntil(inviaConferma(env, await leggiImpostazioni(env), p, new URL(request.url).origin));
@@ -289,6 +317,27 @@ export async function leggiConfigurazione(env) {
   });
 }
 
+const NOMI_LINGUE = { en: "inglese", de: "tedesco", fr: "francese", es: "spagnolo" };
+
+function linkRecensioni(valore) {
+  const t = testo(valore, 400, { campo: "Il link per le recensioni" });
+  if (!t) return "";
+  let u;
+  try {
+    u = new URL(t);
+  } catch {
+    throw new ErroreRichiesta("Il link per le recensioni non è valido: copialo intero, con https://.");
+  }
+  if (u.protocol !== "https:") throw new ErroreRichiesta("Il link per le recensioni deve iniziare con https://.");
+  return u.toString();
+}
+
+function messaggioRecensione(valore, lingua) {
+  const t = testo(valore, 600, { min: 20, campo: `Il messaggio di recensione ${lingua}` });
+  if (!t.includes("{recensione}")) throw new ErroreRichiesta(`Il messaggio di recensione ${lingua} deve contenere {recensione}: è il link che il cliente apre.`);
+  return t;
+}
+
 export async function salvaConfigurazione(request, env) {
   const corpo = await leggiJson(request);
   const i = corpo.impostazioni ?? {};
@@ -305,7 +354,17 @@ export async function salvaConfigurazione(request, env) {
     max_persone_online: intero(i.max_persone_online, 1, 30, "Persone massime online"),
     conferma_automatica: i.conferma_automatica ? 1 : 0,
     messaggio_conferma: testo(i.messaggio_conferma, 600, { min: 20, campo: "Il messaggio di conferma" }),
+    link_recensioni: linkRecensioni(i.link_recensioni),
+    recensioni_automatiche: i.recensioni_automatiche ? 1 : 0,
+    recensione_dopo_ore: intero(i.recensione_dopo_ore ?? 2, 1, 72, "Ore dopo la visita"),
+    messaggio_recensione: messaggioRecensione(i.messaggio_recensione, "in italiano"),
   };
+  for (const l of ALTRE_LINGUE) {
+    const nome = NOMI_LINGUE[l];
+    imp[`descrizione_${l}`] = testo(i[`descrizione_${l}`], 500, { campo: `La descrizione in ${nome}` });
+    imp[`messaggio_conferma_${l}`] = testo(i[`messaggio_conferma_${l}`], 600, { min: 20, campo: `Il messaggio di conferma in ${nome}` });
+    imp[`messaggio_recensione_${l}`] = messaggioRecensione(i[`messaggio_recensione_${l}`], `in ${nome}`);
+  }
 
   if (!Array.isArray(corpo.orari) || corpo.orari.length > 40) throw new ErroreRichiesta("Orari non validi.");
   const orari = corpo.orari.map((o) => {
@@ -346,35 +405,6 @@ export async function salvaConfigurazione(request, env) {
     ),
   ]);
   return leggiConfigurazione(env);
-}
-
-export async function elencoClienti(url, env) {
-  const q = (url.searchParams.get("q") ?? "").trim().slice(0, 60);
-  const filtro = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const { results } = await env.DB.prepare(
-    `SELECT c.id, c.nome, c.telefono, c.email, c.note,
-       COUNT(p.id) AS prenotazioni,
-       SUM(p.stato = 'arrivata') AS visite,
-       SUM(p.stato = 'no_show') AS no_show,
-       MAX(CASE WHEN p.stato = 'arrivata' THEN p.data END) AS ultima_visita,
-       MIN(CASE WHEN p.stato IN ${SQL_ATTIVI} AND p.data >= ?2 THEN p.data END) AS prossima
-     FROM clienti c LEFT JOIN prenotazioni_v2 p ON p.cliente_id = c.id
-     WHERE ?1 = '%%' OR c.nome LIKE ?1 ESCAPE '\\' OR c.telefono LIKE ?1 ESCAPE '\\' OR c.email LIKE ?1 ESCAPE '\\'
-     GROUP BY c.id
-     ORDER BY COALESCE(ultima_visita, prossima, c.creato_il) DESC
-     LIMIT 100`,
-  )
-    .bind(filtro, oraRoma().data)
-    .all();
-  return json({ clienti: results });
-}
-
-export async function modificaCliente(request, env, id) {
-  const corpo = await leggiJson(request);
-  const note = testo(corpo.note, 500, { campo: "Le note" });
-  const esito = await env.DB.prepare("UPDATE clienti SET note = ? WHERE id = ?").bind(note, id).run();
-  if (!esito.meta.changes) throw new ErroreRichiesta("Cliente non trovato.", 404);
-  return json({ ok: true });
 }
 
 export async function statistiche(url, env) {
@@ -420,9 +450,10 @@ export async function statistiche(url, env) {
 export async function invioManuale(request, env, id) {
   const corpo = await leggiJson(request);
   if (!CANALI.includes(corpo.canale)) throw new ErroreRichiesta("Canale non valido.");
+  const tipo = TIPI.includes(corpo.tipo) ? corpo.tipo : "conferma";
   const p = await env.DB.prepare("SELECT id FROM prenotazioni_v2 WHERE id = ?").bind(id).first();
   if (!p) throw new ErroreRichiesta("Prenotazione non trovata.", 404);
-  await registraInvioManuale(env, id, corpo.canale);
+  await registraInvioManuale(env, id, corpo.canale, tipo);
   return json({ ok: true });
 }
 

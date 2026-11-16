@@ -161,6 +161,8 @@ const NUMERICHE = new Set([
   "giorni_prenotabili",
   "max_persone_online",
   "conferma_automatica",
+  "recensioni_automatiche",
+  "recensione_dopo_ore",
 ]);
 
 export async function leggiImpostazioni(env) {

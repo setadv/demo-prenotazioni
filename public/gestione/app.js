@@ -5,12 +5,14 @@ import { vistaMappa } from "./mappa.js";
 import { vistaClienti } from "./clienti.js";
 import { vistaStatistiche } from "./statistiche.js";
 import { vistaImpostazioni } from "./impostazioni.js";
+import { vistaMenu } from "./menu.js";
 
 const VISTE = {
   agenda: vistaAgenda,
   sala: vistaSala,
   mappa: vistaMappa,
   clienti: vistaClienti,
+  menu: vistaMenu,
   statistiche: vistaStatistiche,
   impostazioni: vistaImpostazioni,
 };
@@ -19,6 +21,7 @@ const TITOLI = {
   sala: "Sala",
   mappa: "Mappa tavoli",
   clienti: "Clienti",
+  menu: "Menù",
   statistiche: "Statistiche",
   impostazioni: "Impostazioni",
 };

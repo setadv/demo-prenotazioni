@@ -207,3 +207,86 @@ input::placeholder, textarea::placeholder { color: #70837b; }
   .campi { grid-template-columns: 1fr; }
   .dati div { grid-template-columns: 6.5rem 1fr; }
 }
+
+/* Lingue */
+.scelta-lingua { display: flex; justify-content: flex-start; }
+.scelta-lingua.chiara { margin-bottom: 1.25rem; }
+.lingue { display: flex; flex-wrap: wrap; gap: .25rem; }
+.lingua {
+  min-width: 2.4rem;
+  padding: .3rem .45rem;
+  font-size: .8rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  opacity: .78;
+}
+.lingua:hover { opacity: 1; }
+.lingua[aria-pressed="true"] { opacity: 1; color: var(--melograno); background: var(--bianco); border-color: var(--bianco); }
+.chiara .lingua[aria-pressed="true"] { color: var(--bianco); background: var(--bottiglia); border-color: var(--bottiglia); }
+.insegna .link-menu, .testa-menu .link-menu {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: .45rem .8rem;
+  color: var(--bianco);
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, .6);
+  border-radius: 6px;
+}
+.insegna .link-menu:hover, .testa-menu .link-menu:hover { background: rgba(255, 255, 255, .12); }
+.link-finali { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+
+/* Menù */
+.menu-pagina { min-height: 100vh; }
+.testa-menu { padding: clamp(1.25rem, 3vw, 2.25rem) clamp(16px, 4vw, 3rem) 1.5rem; color: var(--bianco); background: var(--melograno); }
+.testa-menu-riga { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; max-width: 820px; margin: 0 auto; }
+.testa-menu-testo { max-width: 820px; margin: 1.25rem auto 0; }
+.testa-menu .logo { max-height: 80px; margin-bottom: .75rem; }
+.testa-menu h1 { margin: 0; font-size: clamp(2.2rem, 6vw, 3.6rem); line-height: 1.05; overflow-wrap: anywhere; }
+.testa-menu .sottotitolo { margin: .4rem 0 0; color: #ffdbe3; }
+.pill-tavolo { display: inline-block; margin-top: .9rem; padding: .25rem .7rem; color: var(--melograno-scuro); background: var(--bianco); border-radius: 999px; font-weight: 600; }
+.indice-menu {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--celadon);
+  border-bottom: 1px solid var(--linea);
+}
+.indice-menu ul { display: flex; gap: .4rem; max-width: 820px; margin: 0 auto; padding: .6rem clamp(16px, 4vw, 3rem); overflow-x: auto; list-style: none; scrollbar-width: none; }
+.indice-menu a { display: block; padding: .35rem .8rem; color: var(--bottiglia); font-weight: 600; white-space: nowrap; text-decoration: none; background: var(--bianco); border: 1px solid var(--linea); border-radius: 999px; }
+.indice-menu a:hover { border-color: var(--bottiglia); }
+.corpo-menu { max-width: 820px; margin: 0 auto; padding: 1.25rem clamp(16px, 4vw, 3rem) 3rem; }
+.filtro-allergeni { margin-bottom: 1.5rem; padding: .75rem 1rem; background: var(--bianco); border: 1px solid var(--linea); border-radius: 8px; }
+.filtro-allergeni summary { font-weight: 600; cursor: pointer; }
+.scelte-allergeni { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .75rem; }
+.chip {
+  padding: .35rem .7rem;
+  font-size: .9rem;
+  background: var(--celadon);
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+.chip[aria-pressed="true"] { color: var(--bianco); background: var(--melograno); }
+.categoria-menu { scroll-margin-top: 4rem; margin-bottom: 2.25rem; }
+.categoria-menu h2 { margin: 0 0 .5rem; padding-bottom: .4rem; font-size: 1.9rem; border-bottom: 2px solid var(--melograno); }
+.piatto { display: grid; grid-template-columns: 1fr auto; gap: .15rem 1rem; padding: .9rem 0; border-bottom: 1px solid var(--celadon-scuro); }
+.piatto:last-child { border-bottom: 0; }
+.piatto h3 { margin: 0; font-size: 1.25rem; line-height: 1.25; }
+.piatto .prezzo { font: 400 1.2rem "Young Serif", Georgia, serif; white-space: nowrap; }
+.piatto .desc { grid-column: 1 / -1; margin: 0; color: var(--grigio); max-width: 62ch; }
+.piatto .segni { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .3rem .5rem; margin: .35rem 0 0; font-size: .82rem; }
+.segno { padding: .05rem .5rem; font-weight: 600; color: var(--verde); background: #e2f2ea; border-radius: 3px; }
+.segno.piccante { color: var(--melograno-scuro); background: var(--rosa-chiaro); }
+.segno.novita { color: #7a5500; background: var(--ocra-chiaro); }
+.allergeni-piatto { color: var(--grigio); }
+.piatto.esaurito h3, .piatto.esaurito .prezzo, .piatto.esaurito .desc { opacity: .55; }
+.piatto.esaurito h3 { text-decoration: line-through; }
+.etichetta-esaurito { font-weight: 600; color: var(--melograno-scuro); }
+.nota-menu { margin: 2rem 0 .5rem; padding: .9rem 1rem; background: var(--bianco); border-left: 4px solid var(--ocra); border-radius: 4px; }
+.cta-menu { display: inline-block; width: auto; margin-top: 1.5rem; padding: .8rem 1.4rem; text-decoration: none; }
+
+.testa-menu-riga .link-menu { margin-top: 0; }

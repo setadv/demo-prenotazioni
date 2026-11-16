@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,20 +17,23 @@ let cookie = "";
 let posta;
 const inviati = [];
 const PORTA_POSTA = 8798;
+const VERIFICA_WA = "verifica-webhook-di-test";
+const SEGRETO_WA = "segreto-app-meta-di-test";
 
-/** Server finto che riceve le chiamate a Resend e Twilio durante i test. */
+/** Server finto che riceve le chiamate a Resend, Twilio e WhatsApp (Meta) durante i test. */
 function avviaPosta() {
   posta = createServer((req, res) => {
     let corpo = "";
     req.on("data", (c) => (corpo += c));
     req.on("end", () => {
       const voce = { percorso: req.url, auth: req.headers.authorization, corpo };
-      if (req.url.startsWith("/email")) voce.json = JSON.parse(corpo);
+      if (req.url.startsWith("/email") || req.url.startsWith("/wa")) voce.json = JSON.parse(corpo);
       else voce.form = Object.fromEntries(new URLSearchParams(corpo));
       inviati.push(voce);
       const errore = voce.json?.to?.[0] === "errore@esempio.it";
       res.writeHead(errore ? 500 : 200, { "content-type": "application/json" });
-      res.end(errore ? '{"message":"casella inesistente"}' : '{"id":"finto"}');
+      if (req.url.startsWith("/wa")) res.end(JSON.stringify({ messaging_product: "whatsapp", messages: [{ id: `wamid.test${inviati.length}` }] }));
+      else res.end(errore ? '{"message":"casella inesistente"}' : '{"id":"finto"}');
     });
   });
   return new Promise((ok) => posta.listen(PORTA_POSTA, "127.0.0.1", ok));
@@ -93,6 +97,11 @@ before(async () => {
       "--var", `RESEND_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/email`,
       "--var", "TWILIO_ACCOUNT_SID:ACfinto", "--var", "TWILIO_AUTH_TOKEN:token-finto", "--var", "TWILIO_NUMERO:+15550001111",
       "--var", `TWILIO_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/sms`,
+      // WhatsApp: solo il modello di recensione, così le conferme WhatsApp restano manuali come senza configurazione.
+      "--var", "WHATSAPP_TOKEN:token-wa-finto", "--var", "WHATSAPP_PHONE_ID:1234567890",
+      "--var", "WHATSAPP_MODELLO_RECENSIONE:richiesta_recensione", "--var", "WHATSAPP_LINGUE:it,en_GB",
+      "--var", `WHATSAPP_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/wa`,
+      "--var", `WHATSAPP_VERIFY_TOKEN:${VERIFICA_WA}`, "--var", `WHATSAPP_APP_SECRET:${SEGRETO_WA}`,
     ],
     { stdio: "ignore", env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" } },
   );
@@ -445,6 +454,218 @@ test("con la conferma automatica il cliente riceve subito il messaggio", async (
 
 test("un canale email senza indirizzo viene rifiutato", async () => {
   assert.equal((await prenota({ data: sposta(MARTEDI, 49), canale: "email", email: "" }, "10.9.0.1")).status, 400);
+});
+
+const oggiRoma = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date());
+
+test("il menù pubblico ha categorie, piatti, allergeni e traduzioni", async () => {
+  const r = await chiama("/api/menu?t=t3");
+  assert.equal(r.status, 200);
+  const m = await r.json();
+  assert.equal(m.tavolo, "3");
+  assert.deepEqual(m.categorie.map((c) => c.id), ["antipasti", "primi", "secondi", "dolci"]);
+  const burrata = m.categorie[0].piatti[0];
+  assert.equal(burrata.prezzo, 1200);
+  assert.deepEqual(burrata.allergeni, ["latte", "frutta_guscio"]);
+  assert.match(burrata.traduzioni.en.nome, /Burrata/);
+  assert.match(m.nota.de, /Gedeck/);
+  assert.equal((await (await chiama("/api/menu?t=inesistente")).json()).tavolo, null);
+  const pagina = await chiama("/menu");
+  assert.equal(pagina.status, 200);
+  assert.match(await pagina.text(), /menu\.js/);
+});
+
+test("il gestore modifica il menù e il cliente vede subito le modifiche", async () => {
+  assert.equal((await chiama("/api/admin/menu")).status, 401);
+  const menu = await (await admin("/api/admin/menu")).json();
+  assert.equal(menu.allergeni.length, 14);
+  const categorie = menu.categorie;
+  categorie.push({
+    id: "pizze",
+    nome: "Pizze",
+    traduzioni: { en: { nome: "Pizzas" } },
+    piatti: [{ id: "margherita", nome: "Margherita", descrizione: "Pomodoro e fiordilatte", prezzo: 850, allergeni: ["glutine", "latte"], tag: ["vegetariano"], traduzioni: {}, disponibile: true }],
+  });
+  categorie[3].piatti[0].disponibile = false;
+  const salvato = await admin("/api/admin/menu", { method: "PUT", body: { categorie, nota: { ...menu.nota, it: "Coperto 3 €." } } });
+  assert.equal(salvato.status, 200);
+  const pubblico = await (await chiama("/api/menu")).json();
+  const pizze = pubblico.categorie.find((c) => c.id === "pizze");
+  assert.equal(pizze.traduzioni.en.nome, "Pizzas");
+  assert.equal(pizze.piatti[0].prezzo, 850);
+  assert.equal(pubblico.categorie.find((c) => c.id === "dolci").piatti[0].disponibile, false);
+  assert.equal(pubblico.nota.it, "Coperto 3 €.");
+
+  categorie[4].piatti[0].allergeni = ["ananas"];
+  assert.equal((await admin("/api/admin/menu", { method: "PUT", body: { categorie, nota: menu.nota } })).status, 400);
+  categorie[4].piatti[0].allergeni = [];
+  categorie[4].piatti[0].prezzo = -5;
+  assert.equal((await admin("/api/admin/menu", { method: "PUT", body: { categorie, nota: menu.nota } })).status, 400);
+  categorie[4].piatti.push({ ...categorie[4].piatti[0], prezzo: 900 });
+  assert.equal((await admin("/api/admin/menu", { method: "PUT", body: { categorie, nota: menu.nota } })).status, 400, "id duplicato");
+  const dopo = await (await chiama("/api/menu")).json();
+  assert.equal(dopo.categorie.find((c) => c.id === "pizze").piatti[0].prezzo, 850, "un salvataggio rifiutato non cambia nulla");
+});
+
+test("i QR code aprono solo pagine di questo sito", async () => {
+  const generale = await chiama("/api/qr");
+  assert.equal(generale.status, 200);
+  assert.match(generale.headers.get("content-type"), /image\/svg\+xml/);
+  const svg = await generale.text();
+  assert.match(svg, /^<svg[^>]+viewBox="0 0 \d+ \d+"/);
+  assert.match(svg, new RegExp(`<title>${BASE}/menu</title>`));
+  assert.match(await (await chiama("/api/qr?t=t3")).text(), /\/menu\?t=t3/);
+  assert.match(await (await chiama("/api/qr?pagina=prenota")).text(), new RegExp(`<title>${BASE}/</title>`));
+  assert.equal((await chiama("/api/qr?t=nessuno")).status, 404);
+  assert.equal((await chiama("/api/qr?t=../x")).status, 400);
+  assert.match((await chiama("/api/qr?t=t3&scarica=1")).headers.get("content-disposition"), /qr-menu-tavolo-3\.svg/);
+});
+
+test("le pagine pubbliche rispondono nella lingua del cliente", async () => {
+  const errore = await chiama("/api/prenotazioni", {
+    method: "POST",
+    headers: { "cf-connecting-ip": "10.20.0.1" },
+    body: { data: MARTEDI, ora: "20:00", persone: 2, nome: "John Smith", telefono: "12", privacy: true, lingua: "en" },
+  });
+  assert.equal(errore.status, 400);
+  assert.equal((await errore.json()).errore, "Enter a valid phone number.");
+  const chiuso = await (await chiama(`/api/disponibilita?data=${sposta(MARTEDI, 1)}&persone=2&lingua=de`)).json();
+  assert.equal(chiuso.motivo, "Das Restaurant ist an diesem Datum geschlossen.");
+  const troppi = await chiama(`/api/disponibilita?data=${MARTEDI}&persone=99&lingua=fr`);
+  assert.match((await troppi.json()).errore, /^Choisissez de 1 à/);
+  const info = await (await chiama("/api/ristorante")).json();
+  assert.match(info.descrizioni.en, /Seasonal cooking/);
+  const nonTrovata = await chiama(`/api/prenotazioni/${crypto.randomUUID()}`, { headers: { "x-prenotazione-token": "x", "x-lingua": "es" } });
+  assert.equal((await nonTrovata.json()).errore, "Reserva no encontrada. Revisa el enlace que recibiste.");
+
+  const data = sposta(MARTEDI, 56);
+  const pren = await (await prenota({ data, ora: "20:00", nome: "Emma Brown", telefono: "+44 7700 900123", email: "emma@esempio.it", canale: "email", lingua: "en" }, "10.20.0.2")).json();
+  await admin(`/api/admin/prenotazioni/${pren.id}`, { method: "PATCH", body: { stato: "confermata" } });
+  const email = await attendiInvio((v) => v.json?.to?.[0] === "emma@esempio.it");
+  assert.ok(email, "conferma in inglese non inviata");
+  assert.match(email.json.subject, /^Booking confirmed at /);
+  assert.match(email.json.text, /^Hi Emma, your table at .+ for 2 people on Tuesday/);
+  assert.match(email.json.text, /&l=en$/);
+  const agenda = await (await admin(`/api/admin/agenda?data=${data}`)).json();
+  assert.equal(agenda.prenotazioni.find((p) => p.id === pren.id).lingua, "en");
+});
+
+test("il CRM registra consenso, etichette e compleanno ed esporta i segmenti", async () => {
+  const data = sposta(MARTEDI, 63);
+  await prenota({ data, ora: "20:00", nome: "Carla Rossa", telefono: "333 4440001", marketing: true, canale: "sms" }, "10.21.0.1");
+  await prenota({ data, ora: "21:00", nome: "=1+1 Prova", telefono: "333 4440002", canale: "sms" }, "10.21.0.1");
+  let r = await (await admin("/api/admin/clienti?segmento=marketing")).json();
+  const carla = r.clienti.find((c) => c.nome === "Carla Rossa");
+  assert.ok(carla, "il consenso alle promozioni non è stato registrato");
+  assert.equal(carla.marketing, true);
+  assert.ok(carla.marketing_il);
+  assert.equal(r.clienti.some((c) => c.nome === "=1+1 Prova"), false);
+  assert.ok(r.conteggi.tutti >= r.conteggi.marketing);
+
+  assert.equal((await admin(`/api/admin/clienti/${carla.id}`, { method: "PATCH", body: { compleanno: "02-30" } })).status, 400);
+  const salvata = await admin(`/api/admin/clienti/${carla.id}`, { method: "PATCH", body: { etichette: ["VIP", "Allergie"], compleanno: "03-15", lingua: "fr" } });
+  assert.equal(salvata.status, 200);
+  const scheda = await salvata.json();
+  assert.deepEqual(scheda.cliente.etichette, ["VIP", "Allergie"]);
+  assert.equal(scheda.cliente.compleanno, "03-15");
+  assert.equal(scheda.cliente.marketing, true, "un aggiornamento parziale non tocca il consenso");
+  assert.equal(scheda.storico.length, 1);
+  r = await (await admin("/api/admin/clienti?segmento=vip")).json();
+  assert.deepEqual(r.clienti.map((c) => c.nome), ["Carla Rossa"]);
+  r = await (await admin("/api/admin/clienti?q=allergie")).json();
+  assert.ok(r.clienti.some((c) => c.id === carla.id));
+  const agenda = await (await admin(`/api/admin/agenda?data=${data}`)).json();
+  assert.deepEqual(agenda.prenotazioni.find((p) => p.nome === "Carla Rossa").etichette, ["VIP", "Allergie"]);
+
+  const revoca = await (await admin(`/api/admin/clienti/${carla.id}`, { method: "PATCH", body: { marketing: false } })).json();
+  assert.equal(revoca.cliente.marketing, false);
+  assert.equal(revoca.cliente.marketing_il, null);
+
+  const csv = await admin("/api/admin/clienti.csv?segmento=tutti");
+  assert.equal(csv.status, 200);
+  assert.match(csv.headers.get("content-type"), /text\/csv/);
+  const byte = new Uint8Array(await csv.arrayBuffer());
+  assert.deepEqual([...byte.slice(0, 3)], [0xef, 0xbb, 0xbf], "BOM per Excel");
+  const testo = new TextDecoder().decode(byte);
+  assert.ok(testo.startsWith("Nome;Telefono;Email;"));
+  assert.match(testo, /\n'=1\+1 Prova;/);
+  assert.equal((await chiama("/api/admin/clienti.csv")).status, 401);
+});
+
+test("la richiesta di recensione parte una volta dopo la visita, anche su WhatsApp", async () => {
+  const conf = await (await admin("/api/admin/configurazione")).json();
+  assert.equal(conf.canali.whatsapp, false);
+  assert.equal(conf.canali.whatsapp_recensione, true);
+  const prova = (modifiche) => admin("/api/admin/configurazione", { method: "PUT", body: { ...conf, impostazioni: { ...conf.impostazioni, ...modifiche } } });
+  assert.equal((await prova({ link_recensioni: "http://esempio.it/recensioni" })).status, 400);
+  assert.equal((await prova({ link_recensioni: "https://g.page/r/prova/review", messaggio_recensione: "Grazie della visita, a presto!" })).status, 400);
+  assert.equal((await prova({ link_recensioni: "https://g.page/r/prova/review", recensione_dopo_ore: 1, recensioni_automatiche: true })).status, 200);
+
+  const ieri = sposta(oggiRoma(), -1);
+  const crea = (dati) =>
+    admin("/api/admin/prenotazioni", { method: "POST", body: { data: ieri, ora: "12:30", persone: 2, origine: "walk_in", ...dati } }).then((r) => r.json());
+  const viaEmail = await crea({ nome: "Sara Gialli", telefono: "333 7770001", email: "sara@esempio.it", canale: "email" });
+  const viaWa = await crea({ nome: "Tom Green", telefono: "+44 7700 900777", canale: "whatsapp", lingua: "en" });
+  const viaSms = await crea({ nome: "Rino Grigi", telefono: "333 7770003", canale: "sms" });
+
+  await admin(`/api/admin/agenda?data=${ieri}`);
+  const email = await attendiInvio((v) => v.json?.to?.[0] === "sara@esempio.it");
+  assert.ok(email, "richiesta di recensione via email non inviata");
+  assert.equal(email.json.subject, `Com'è andata da ${conf.impostazioni.nome}?`);
+  assert.match(email.json.text, /https:\/\/g\.page\/r\/prova\/review/);
+
+  const wa = await attendiInvio((v) => v.percorso === "/wa/1234567890/messages" && v.json?.to === "447700900777");
+  assert.ok(wa, "richiesta di recensione WhatsApp non inviata");
+  assert.equal(wa.auth, "Bearer token-wa-finto");
+  assert.equal(wa.json.template.name, "richiesta_recensione");
+  assert.equal(wa.json.template.language.code, "en_GB");
+  assert.deepEqual(wa.json.template.components[0].parameters.map((p) => p.text), ["Tom", conf.impostazioni.nome, "https://g.page/r/prova/review"]);
+
+  const sms = await attendiInvio((v) => v.form?.To === "+393337770003");
+  assert.ok(sms, "chi ha scelto SMS riceve la richiesta via SMS");
+
+  const prima = inviati.length;
+  await admin(`/api/admin/agenda?data=${ieri}`);
+  await new Promise((f) => setTimeout(f, 800));
+  assert.equal(inviati.length, prima, "la richiesta non deve partire due volte");
+  const agenda = await (await admin(`/api/admin/agenda?data=${ieri}`)).json();
+  for (const id of [viaEmail.id, viaWa.id, viaSms.id]) {
+    const riga = agenda.prenotazioni.find((p) => p.id === id);
+    assert.equal(riga.notifica_recensione.esito, "inviata", riga.nome);
+    assert.match(riga.messaggio_recensione, /g\.page/);
+  }
+  const stato = await (await admin("/api/admin/whatsapp")).json();
+  assert.equal(stato.inviati[0].cliente, "Tom Green");
+  assert.equal(stato.inviati[0].stato, "accettato");
+});
+
+test("il webhook WhatsApp accetta solo richieste firmate da Meta", async () => {
+  const ok = await chiama(`/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=${VERIFICA_WA}&hub.challenge=12345`);
+  assert.equal(ok.status, 200);
+  assert.equal(await ok.text(), "12345");
+  assert.equal((await chiama("/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=sbagliato&hub.challenge=1")).status, 403);
+
+  const inviato = (await (await admin("/api/admin/whatsapp")).json()).inviati[0];
+  // Il server finto risponde con wamid.testN, dove N è la posizione della richiesta in `inviati`.
+  const wamid = `wamid.test${inviati.findIndex((v) => v.json?.to === "447700900777") + 1}`;
+  const corpo = JSON.stringify({
+    object: "whatsapp_business_account",
+    entry: [{ changes: [{ value: {
+      contacts: [{ wa_id: "393337770001", profile: { name: "Sara" } }],
+      messages: [{ id: "wamid.ricevuto1", from: "393337770001", timestamp: "1700000000", type: "text", text: { body: "Grazie, bellissima serata!" } }],
+      statuses: [{ id: wamid, status: "read", recipient_id: "447700900777" }],
+    } }] }],
+  });
+  const firma = `sha256=${createHmac("sha256", SEGRETO_WA).update(corpo).digest("hex")}`;
+  const senzaFirma = await fetch(`${BASE}/api/whatsapp/webhook`, { method: "POST", headers: { "content-type": "application/json" }, body: corpo });
+  assert.equal(senzaFirma.status, 401);
+  const firmata = await fetch(`${BASE}/api/whatsapp/webhook`, { method: "POST", headers: { "content-type": "application/json", "x-hub-signature-256": firma }, body: corpo });
+  assert.equal(firmata.status, 200);
+  const stato = await (await admin("/api/admin/whatsapp")).json();
+  const ricevuto = stato.ricevuti.find((m) => m.testo === "Grazie, bellissima serata!");
+  assert.ok(ricevuto);
+  assert.equal(ricevuto.cliente, "Sara Gialli");
+  assert.equal(stato.inviati.find((m) => m.cliente === inviato.cliente).stato, "read");
 });
 
 test("dopo il logout il cookie viene cancellato", async () => {

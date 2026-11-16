@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Menù</title>
+  <link rel="stylesheet" href="/stile.css">
+</head>
+<body class="menu-pagina">
+  <header class="testa-menu">
+    <div class="testa-menu-riga">
+      <div id="scelta-lingua" class="scelta-lingua"></div>
+      <a class="link-menu" href="/" data-t="prenota_tavolo">Prenota un tavolo</a>
+    </div>
+    <div class="testa-menu-testo">
+      <img id="logo" class="logo" alt="" hidden>
+      <h1 id="nome-ristorante" data-t="menu">Menù</h1>
+      <p id="sottotitolo" class="sottotitolo"></p>
+      <p id="tavolo" class="pill-tavolo" hidden></p>
+    </div>
+  </header>
+  <nav id="indice" class="indice-menu" data-t-aria="sezioni" aria-label="Sezioni del menù" hidden></nav>
+  <main class="corpo-menu">
+    <p id="stato" class="stato" data-t="carico_menu">Carico il menù.</p>
+    <details id="filtro" class="filtro-allergeni" hidden>
+      <summary data-t="nascondi">Nascondi i piatti con</summary>
+      <div id="scelte-allergeni" class="scelte-allergeni"></div>
+    </details>
+    <p id="nascosti" class="legenda" role="status" hidden></p>
+    <div id="categorie"></div>
+    <p id="nota" class="nota-menu" hidden></p>
+    <p class="legenda" data-t="info_allergeni">Allergeni indicati secondo il Regolamento UE 1169/2011.</p>
+    <a class="azione cta-menu" href="/" data-t="prenota_tavolo">Prenota un tavolo</a>
+  </main>
+  <script src="/menu.js" type="module"></script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import { CANALI, inviaConferma, tokenPrenotazione, tokenValido } from "./notifiche.js";
+import { ALTRE_LINGUE, erroreIn, linguaRichiesta } from "./lingue.js";
 import {
   calcolaDisponibilita,
   candidati,
@@ -46,6 +47,7 @@ export async function infoRistorante(env) {
     indirizzo: imp.indirizzo,
     telefono: imp.telefono,
     descrizione: imp.descrizione,
+    descrizioni: Object.fromEntries([["it", imp.descrizione], ...ALTRE_LINGUE.map((l) => [l, imp[`descrizione_${l}`] || imp.descrizione])]),
     prezzo_medio: imp.prezzo_medio,
     max_persone_online: imp.max_persone_online,
     giorni_prenotabili: imp.giorni_prenotabili,
@@ -57,42 +59,51 @@ export async function infoRistorante(env) {
   });
 }
 
-export async function disponibilita(url, env) {
+export async function disponibilita(request, url, env) {
+  const lingua = linguaRichiesta(request, url);
   const imp = await leggiImpostazioni(env);
-  const persone = intero(url.searchParams.get("persone") ?? "2", 1, imp.max_persone_online, "Persone");
-  return json(await calcolaDisponibilita(env, url.searchParams.get("data"), persone, imp));
+  const persone = Number(url.searchParams.get("persone") ?? "2");
+  if (!Number.isInteger(persone) || persone < 1 || persone > imp.max_persone_online) {
+    throw new ErroreRichiesta(erroreIn(lingua, "persone_range", { max: imp.max_persone_online }));
+  }
+  return json(await calcolaDisponibilita(env, url.searchParams.get("data"), persone, imp, lingua));
+}
+
+/** Testo libero del cliente: obbligatorio o facoltativo, con messaggi nella sua lingua. */
+function campo(valore, max, lingua, chiaveVuoto = null, min = 1) {
+  const t = typeof valore === "string" ? valore.trim() : valore == null ? "" : String(valore).trim();
+  if (chiaveVuoto && t.length < min) throw new ErroreRichiesta(erroreIn(lingua, chiaveVuoto));
+  if (t.length > max) throw new ErroreRichiesta(erroreIn(lingua, "lungo"));
+  return t;
 }
 
 export async function nuovaPrenotazione(request, env, ctx) {
   const corpo = await leggiJson(request);
   if (corpo.sito) return json({ id: crypto.randomUUID(), codice: codiceCasuale(), token: tokenCasuale(), stato: "in_attesa" }, 201);
 
+  const lingua = linguaRichiesta(request, null, corpo);
   const imp = await leggiImpostazioni(env);
   const persone = Number(corpo.persone);
-  if (!Number.isInteger(persone) || persone < 1) throw new ErroreRichiesta("Indica il numero di persone.");
-  if (persone > imp.max_persone_online) {
-    throw new ErroreRichiesta(`Per gruppi di più di ${imp.max_persone_online} persone chiama il ristorante.`);
-  }
-  const nome = testo(corpo.nome, 80, { min: 2, campo: "Il nome" });
-  const telefono = testo(corpo.telefono, 30, { min: 1, campo: "Il telefono" });
-  if (!normalizzaTelefono(telefono)) throw new ErroreRichiesta("Scrivi un numero di telefono valido.");
-  const email = testo(corpo.email, 254, { campo: "L'email" });
-  if (email && !emailValida(email)) throw new ErroreRichiesta("Scrivi un'email valida o lascia il campo vuoto.");
+  if (!Number.isInteger(persone) || persone < 1) throw new ErroreRichiesta(erroreIn(lingua, "persone"));
+  if (persone > imp.max_persone_online) throw new ErroreRichiesta(erroreIn(lingua, "gruppo", { max: imp.max_persone_online }));
+  const nome = campo(corpo.nome, 80, lingua, "nome", 2);
+  const telefono = campo(corpo.telefono, 30, lingua, "telefono");
+  if (!normalizzaTelefono(telefono)) throw new ErroreRichiesta(erroreIn(lingua, "telefono"));
+  const email = campo(corpo.email, 254, lingua);
+  if (email && !emailValida(email)) throw new ErroreRichiesta(erroreIn(lingua, "email"));
   const occasione = OCCASIONI.includes(corpo.occasione ?? "") ? corpo.occasione ?? "" : "";
   const canale = CANALI.includes(corpo.canale) ? corpo.canale : email ? "email" : "sms";
-  if (canale === "email" && !email) throw new ErroreRichiesta("Per ricevere la conferma via email scrivi il tuo indirizzo.");
-  const note = testo(corpo.note, 300, { campo: "Le note" });
-  if (corpo.privacy !== true) throw new ErroreRichiesta("Per prenotare devi accettare l'uso dei dati.");
-  if (!oraValida(corpo.ora)) throw new ErroreRichiesta("Scegli un orario.");
+  if (canale === "email" && !email) throw new ErroreRichiesta(erroreIn(lingua, "email_canale"));
+  const note = campo(corpo.note, 300, lingua);
+  if (corpo.privacy !== true) throw new ErroreRichiesta(erroreIn(lingua, "privacy"));
+  if (!oraValida(corpo.ora)) throw new ErroreRichiesta(erroreIn(lingua, "orario"));
 
-  const disp = await calcolaDisponibilita(env, corpo.data, persone, imp);
+  const disp = await calcolaDisponibilita(env, corpo.data, persone, imp, lingua);
   const slot = disp.slot.find((s) => s.ora === corpo.ora);
-  if (!slot || !slot.disponibile) throw new ErroreRichiesta("Questo orario non è più disponibile. Scegline un altro.", 409);
+  if (!slot || !slot.disponibile) throw new ErroreRichiesta(erroreIn(lingua, "occupato"), 409);
 
   const chiave = `prenota:${await impronta(request, env)}`;
-  if (await limiteSuperato(env, chiave, 10, 60)) {
-    throw new ErroreRichiesta("Troppe prenotazioni in poco tempo. Riprova tra un'ora.", 429);
-  }
+  if (await limiteSuperato(env, chiave, 10, 60)) throw new ErroreRichiesta(erroreIn(lingua, "limite"), 429);
 
   const { tavoli } = await caricaGiorno(env, corpo.data);
   const tavoliIds = candidati(tavoli, persone, true).map((t) => t.id);
@@ -114,12 +125,13 @@ export async function nuovaPrenotazione(request, env, ctx) {
     note,
     stato: imp.conferma_automatica ? "confermata" : "in_attesa",
     origine: "online",
-    cliente_id: await trovaOCreaCliente(env, { nome, telefono, email }),
+    cliente_id: await trovaOCreaCliente(env, { nome, telefono, email, lingua, marketing: corpo.marketing === true }),
     sconto: slot.sconto,
     canale,
+    lingua,
   };
   const tavolo = await inserisciPrenotazione(env, riga, tavoliIds);
-  if (tavolo === false) throw new ErroreRichiesta("Questo orario non è più disponibile. Scegline un altro.", 409);
+  if (tavolo === false) throw new ErroreRichiesta(erroreIn(lingua, "occupato"), 409);
 
   await registraTentativo(env, chiave);
   if (riga.stato === "confermata") ctx.waitUntil(inviaConferma(env, imp, riga, new URL(request.url).origin));
@@ -129,13 +141,13 @@ export async function nuovaPrenotazione(request, env, ctx) {
 async function prenotazioneConToken(request, env, id) {
   const token = request.headers.get("x-prenotazione-token") ?? "";
   const p = await env.DB.prepare(
-    `SELECT id, codice, token_hash, data, ora, inizio_min, persone, nome, occasione, note, stato, sconto
+    `SELECT id, codice, token_hash, data, ora, inizio_min, persone, nome, occasione, note, stato, sconto, lingua
      FROM prenotazioni_v2 WHERE id = ?`,
   )
     .bind(id)
     .first();
   if (!p || !(await tokenValido(env, p.id, token, p.token_hash))) {
-    throw new ErroreRichiesta("Prenotazione non trovata. Controlla il link ricevuto.", 404);
+    throw new ErroreRichiesta(erroreIn(linguaRichiesta(request), "non_trovata"), 404);
   }
   return p;
 }
@@ -160,13 +172,14 @@ export async function leggiPrenotazione(request, env, id) {
     stato: p.stato,
     sconto: p.sconto,
     annullabile: annullabile(p),
+    lingua: p.lingua,
     ristorante: { nome: imp.nome, indirizzo: imp.indirizzo, telefono: imp.telefono },
   });
 }
 
 export async function annullaPrenotazione(request, env, id) {
   const p = await prenotazioneConToken(request, env, id);
-  if (!annullabile(p)) throw new ErroreRichiesta("Questa prenotazione non si può più annullare online. Chiama il ristorante.", 409);
+  if (!annullabile(p)) throw new ErroreRichiesta(erroreIn(linguaRichiesta(request), "non_annullabile"), 409);
   await env.DB.prepare("UPDATE prenotazioni_v2 SET stato = 'annullata', aggiornata_il = ? WHERE id = ?")
     .bind(new Date().toISOString(), id)
     .run();

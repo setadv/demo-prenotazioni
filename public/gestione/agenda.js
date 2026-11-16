@@ -71,25 +71,36 @@ export function selettoreTavolo(p, tavoli, sale, onCambia) {
 
 const NOMI_CANALE = { email: "email", sms: "SMS", whatsapp: "WhatsApp" };
 
-function bloccoMessaggio(p, ricarica) {
-  if (!p.messaggio && !p.notifica) return null;
-  const n = p.notifica;
+const TIPI_MESSAGGIO = {
+  conferma: { nome: "Conferma", oggetto: "Prenotazione confermata" },
+  recensione: { nome: "Richiesta di recensione", oggetto: "Com'è andata?" },
+};
+
+/** Stato del messaggio (conferma o recensione) e pulsanti per inviarlo a mano con il testo già pronto. */
+function bloccoMessaggio(p, tipo, ricarica) {
+  const testoPronto = tipo === "recensione" ? p.messaggio_recensione : p.messaggio;
+  const n = tipo === "recensione" ? p.notifica_recensione : p.notifica;
+  if (!testoPronto && !n) return null;
+  const nome = TIPI_MESSAGGIO[tipo].nome;
   let stato = null;
-  if (n?.esito === "inviata") stato = h("span", { class: "invio ok" }, `Conferma inviata via ${NOMI_CANALE[n.canale]}`);
-  else if (n?.esito === "manuale") stato = h("span", { class: "invio ok" }, `Conferma inviata a mano via ${NOMI_CANALE[n.canale]}`);
+  if (n?.esito === "inviata") stato = h("span", { class: "invio ok" }, `${nome} inviata via ${NOMI_CANALE[n.canale]}`);
+  else if (n?.esito === "manuale") stato = h("span", { class: "invio ok" }, `${nome} inviata a mano via ${NOMI_CANALE[n.canale]}`);
   else if (n?.esito === "errore") stato = h("span", { class: "invio errore" }, `Invio non riuscito: ${n.dettaglio}`);
-  else if (p.messaggio) stato = h("span", { class: "invio attesa" }, `Conferma da inviare, preferisce ${NOMI_CANALE[p.canale] ?? "email"}`);
-  if (!p.messaggio) return h("p", { class: "messaggi" }, stato);
+  else if (n?.esito === "da_inviare" || tipo === "conferma") {
+    stato = h("span", { class: "invio attesa" }, `${nome} da inviare, preferisce ${NOMI_CANALE[p.canale] ?? "email"}`);
+  }
+  const giaInviata = n && ["inviata", "manuale"].includes(n.esito);
+  if (!testoPronto || (tipo === "recensione" && giaInviata)) return h("p", { class: "messaggi" }, stato);
 
   const segna = (canale) => async () => {
     try {
-      await api(`/api/admin/prenotazioni/${p.id}/notifica`, { metodo: "POST", corpo: { canale } });
+      await api(`/api/admin/prenotazioni/${p.id}/notifica`, { metodo: "POST", corpo: { canale, tipo } });
       setTimeout(ricarica, 300);
     } catch (e) {
       avviso(e.message, "errore");
     }
   };
-  const testo = encodeURIComponent(p.messaggio);
+  const testo = encodeURIComponent(testoPronto);
   const numero = numeroWhatsApp(p.telefono);
   const link = [];
   if (numero) {
@@ -102,17 +113,36 @@ function bloccoMessaggio(p, ricarica) {
     link.push(
       h("a", {
         class: `invia-link${p.canale === "email" ? " preferito" : ""}`,
-        href: `mailto:${p.email}?subject=${encodeURIComponent("Prenotazione confermata")}&body=${testo}`,
+        href: `mailto:${p.email}?subject=${encodeURIComponent(TIPI_MESSAGGIO[tipo].oggetto)}&body=${testo}`,
         onclick: segna("email"),
       }, "Email"),
     );
   }
-  return h("div", { class: "messaggi" }, stato, link.length ? h("span", { class: "legenda" }, "Invia:") : null, link);
+  return h("div", { class: "messaggi" }, stato, link.length ? h("span", { class: "legenda" }, tipo === "recensione" ? "Chiedi la recensione:" : "Invia:") : null, link);
+}
+
+const LINGUE_CLIENTE = { en: "Parla inglese", de: "Parla tedesco", fr: "Parla francese", es: "Parla spagnolo" };
+const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+
+/** Compleanno entro una settimana dalla data della prenotazione. */
+function compleannoVicino(mmgg, data) {
+  if (!mmgg) return null;
+  const anno = Number(data.slice(0, 4));
+  for (const a of [anno - 1, anno, anno + 1]) {
+    const giorno = `${a}-${mmgg}`;
+    const diff = Math.round((Date.parse(`${giorno}T12:00:00Z`) - Date.parse(`${data}T12:00:00Z`)) / 86400000);
+    if (!Number.isNaN(diff) && Math.abs(diff) <= 7) return diff === 0 ? "Compie gli anni oggi" : `Compleanno il ${Number(mmgg.slice(3))} ${MESI[Number(mmgg.slice(0, 2)) - 1]}`;
+  }
+  return null;
 }
 
 function rigaPrenotazione(p, dati, ricarica) {
   const etichette = [];
+  for (const e of p.etichette ?? []) etichette.push(h("span", { class: `etichetta${e === "VIP" ? " vip" : ""}` }, e));
   if (p.occasione) etichette.push(h("span", { class: "etichetta occasione" }, OCCASIONI[p.occasione] ?? p.occasione));
+  const compleanno = compleannoVicino(p.compleanno, p.data);
+  if (compleanno) etichette.push(h("span", { class: "etichetta occasione" }, compleanno));
+  if (LINGUE_CLIENTE[p.lingua]) etichette.push(h("span", { class: "etichetta" }, LINGUE_CLIENTE[p.lingua]));
   if (p.visite >= 2) etichette.push(h("span", { class: "etichetta abituale" }, `Cliente abituale, ${p.visite} visite`));
   else if (p.visite === 1) etichette.push(h("span", { class: "etichetta" }, "Già venuto una volta"));
   if (p.no_show) etichette.push(h("span", { class: "etichetta allerta" }, `${p.no_show} ${p.no_show === 1 ? "assenza" : "assenze"} in passato`));
@@ -166,7 +196,8 @@ function rigaPrenotazione(p, dati, ricarica) {
       etichette.length ? h("p", { class: "etichette" }, etichette) : null,
       p.note ? h("p", { class: "nota" }, `Richiesta: ${p.note}`) : null,
       p.note_cliente ? h("p", { class: "nota" }, `Note sul cliente: ${p.note_cliente}`) : null,
-      bloccoMessaggio(p, ricarica),
+      bloccoMessaggio(p, "conferma", ricarica),
+      bloccoMessaggio(p, "recensione", ricarica),
     ),
     h("div", { class: "gestione-riga" }, h("label", { class: "piccola" }, "Tavolo", tavolo), h("div", { class: "azioni" }, azioni)),
   );
@@ -207,7 +238,13 @@ export function apriNuovaPrenotazione({ tavoli, sale, data, ora, tavolo_id, onSa
       ),
       h("label", {}, "Nome e cognome", h("input", { name: "nome", required: true, minlength: 2, maxlength: 80 })),
       h("label", {}, "Telefono", h("input", { name: "telefono", type: "tel", maxlength: 30 })),
-      h("label", { class: "largo" }, "Email (facoltativa)", h("input", { name: "email", type: "email", maxlength: 254 })),
+      h("label", {}, "Email (facoltativa)", h("input", { name: "email", type: "email", maxlength: 254 })),
+      h(
+        "label",
+        {},
+        "Lingua dei messaggi",
+        h("select", { name: "lingua" }, Object.entries({ it: "Italiano", en: "Inglese", de: "Tedesco", fr: "Francese", es: "Spagnolo" }).map(([k, v]) => h("option", { value: k }, v))),
+      ),
       h("label", { class: "largo" }, "Note", h("textarea", { name: "note", rows: 2, maxlength: 300 })),
     ),
     messaggio,
@@ -236,6 +273,7 @@ export function apriNuovaPrenotazione({ tavoli, sale, data, ora, tavolo_id, onSa
           telefono: c.get("telefono"),
           email: c.get("email"),
           note: c.get("note"),
+          lingua: c.get("lingua"),
           forza: forzata,
         },
       });

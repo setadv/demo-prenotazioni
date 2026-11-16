@@ -10,30 +10,34 @@
 </head>
 <body class="sala">
   <main class="scheda">
-    <p id="caricamento" class="stato">Carico la prenotazione.</p>
+    <div id="scelta-lingua" class="scelta-lingua chiara"></div>
+    <p id="caricamento" class="stato" data-t="carico_prenotazione">Carico la prenotazione.</p>
     <p id="errore" class="messaggio" role="alert" hidden></p>
     <section id="dettaglio" hidden>
       <p id="ristorante" class="ristorante"></p>
       <h1 id="titolo">La tua prenotazione</h1>
       <dl class="dati">
-        <div><dt>Quando</dt><dd id="quando"></dd></div>
-        <div><dt>Persone</dt><dd id="quanti"></dd></div>
-        <div><dt>A nome di</dt><dd id="nome"></dd></div>
-        <div><dt>Codice</dt><dd id="codice"></dd></div>
-        <div id="riga-sconto" hidden><dt>Sconto</dt><dd id="sconto"></dd></div>
-        <div id="riga-note" hidden><dt>Richieste</dt><dd id="note"></dd></div>
+        <div><dt data-t="voce_quando">Quando</dt><dd id="quando"></dd></div>
+        <div><dt data-t="voce_persone">Persone</dt><dd id="quanti"></dd></div>
+        <div><dt data-t="voce_nome">A nome di</dt><dd id="nome"></dd></div>
+        <div><dt data-t="codice">Codice</dt><dd id="codice"></dd></div>
+        <div id="riga-sconto" hidden><dt data-t="voce_sconto">Sconto</dt><dd id="sconto"></dd></div>
+        <div id="riga-note" hidden><dt data-t="voce_richieste">Richieste</dt><dd id="note"></dd></div>
       </dl>
       <p id="contatti" class="legenda"></p>
       <div id="area-annulla" hidden>
-        <button id="annulla" class="secondario pericolo" type="button">Annulla la prenotazione</button>
+        <button id="annulla" class="secondario pericolo" type="button" data-t="annulla">Annulla la prenotazione</button>
         <div id="conferma-annulla" class="conferma-annulla" hidden>
-          <p>Vuoi davvero annullare? Il tavolo tornerà disponibile per altri clienti.</p>
-          <button id="annulla-si" class="azione" type="button">Sì, annulla</button>
-          <button id="annulla-no" class="secondario" type="button">No, tienila</button>
+          <p data-t="conferma_annulla">Vuoi davvero annullare? Il tavolo tornerà disponibile per altri clienti.</p>
+          <button id="annulla-si" class="azione" type="button" data-t="si_annulla">Sì, annulla</button>
+          <button id="annulla-no" class="secondario" type="button" data-t="no_tieni">No, tienila</button>
         </div>
       </div>
     </section>
-    <a href="/" class="torna">Fai una nuova prenotazione</a>
+    <p class="link-finali">
+      <a href="/menu" class="torna" data-t="vedi_menu">Guarda il menù</a>
+      <a href="/" class="torna" data-t="nuova_prenotazione">Fai una nuova prenotazione</a>
+    </p>
   </main>
   <script src="/gestisci.js" type="module"></script>
 </body>

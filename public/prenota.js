@@ -1,14 +1,12 @@
+import { applicaTesti, lingua, locale, persone, quandoCambia, selettoreLingua, servizio, t, testoData } from "./lingue.js";
+
 const $ = (id) => document.getElementById(id);
 const modulo = $("modulo");
-const stato = { data: null, ora: null, persone: 2, slot: [], info: null, mese: null };
+const stato = { data: null, ora: null, persone: 2, slot: [], info: null, mese: null, conferma: null };
 let ultimaRichiesta = 0;
 
-const testoData = (iso) =>
-  new Intl.DateTimeFormat("it-IT", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(
-    new Date(`${iso}T12:00:00Z`),
-  );
 const testoMese = (mese) =>
-  new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${mese}-15T12:00:00Z`));
+  new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${mese}-15T12:00:00Z`));
 const giornoSettimana = (iso) => new Date(`${iso}T12:00:00Z`).getUTCDay();
 const spostaData = (iso, n) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const spostaMese = (mese, n) => {
@@ -16,9 +14,9 @@ const spostaMese = (mese, n) => {
   const d = new Date(Date.UTC(a, m - 1 + n, 1));
   return d.toISOString().slice(0, 7);
 };
-const persone = (n) => (n === 1 ? "1 persona" : `${n} persone`);
 const NOMI_CANALE = { email: "email", sms: "SMS", whatsapp: "WhatsApp" };
-const INTESTAZIONI = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+// Dal lunedì alla domenica: 5 gennaio 2026 era un lunedì.
+const intestazioni = () => [5, 6, 7, 8, 9, 10, 11].map((g) => testoData(`2026-01-${String(g).padStart(2, "0")}`, { weekday: "short" }));
 
 function crea(tag, classe, testo) {
   const el = document.createElement(tag);
@@ -29,24 +27,31 @@ function crea(tag, classe, testo) {
 
 async function caricaInfo() {
   const r = await fetch("/api/ristorante");
-  if (!r.ok) throw new Error("Non riesco a caricare il ristorante. Ricarica la pagina.");
-  const info = await r.json();
-  stato.info = info;
-  document.title = `${info.nome}, prenota un tavolo`;
-  $("nome-ristorante").textContent = info.nome;
-  $("indirizzo").textContent = info.indirizzo;
-  $("prezzo").textContent = info.prezzo_medio ? `Prezzo medio ${info.prezzo_medio} € a persona` : "";
-  $("descrizione").textContent = info.descrizione;
-  $("gruppi").textContent = `Per gruppi di più di ${info.max_persone_online} persone chiama il ${info.telefono}.`;
-  mostraImmagine($("logo"), "logo", info.logo, `Logo di ${info.nome}`);
-  mostraImmagine($("foto"), "foto", info.foto, "La sala del ristorante");
+  if (!r.ok) throw new Error(t("errore_info"));
+  stato.info = await r.json();
+  mostraImmagine($("logo"), "logo", stato.info.logo);
+  mostraImmagine($("foto"), "foto", stato.info.foto);
+  testiRistorante();
   creaPersone();
   creaCalendario();
 }
 
-function mostraImmagine(img, chiave, versione, alt) {
+/** Testi della colonna del ristorante: cambiano con la lingua. */
+function testiRistorante() {
+  const info = stato.info;
+  if (!info) return;
+  document.title = t("titolo_documento", { nome: info.nome });
+  $("nome-ristorante").textContent = info.nome;
+  $("indirizzo").textContent = info.indirizzo;
+  $("prezzo").textContent = info.prezzo_medio ? t("prezzo_medio", { n: info.prezzo_medio }) : "";
+  $("descrizione").textContent = info.descrizioni?.[lingua()] || info.descrizione;
+  $("gruppi").textContent = t("gruppi", { max: info.max_persone_online, telefono: info.telefono });
+  $("logo").alt = t("logo_alt", { nome: info.nome });
+  $("foto").alt = t("foto_alt");
+}
+
+function mostraImmagine(img, chiave, versione) {
   if (!versione) return;
-  img.alt = alt;
   img.addEventListener("load", () => {
     img.hidden = false;
   });
@@ -93,7 +98,7 @@ function creaCalendario() {
   if (primo) scegliGiorno(primo);
   else {
     disegnaCalendario();
-    $("fasce").replaceChildren(crea("p", "stato", "Nessun giorno prenotabile online. Chiama il ristorante."));
+    $("fasce").replaceChildren(crea("p", "stato", t("nessun_giorno")));
   }
 }
 
@@ -104,18 +109,18 @@ function disegnaCalendario() {
 
   const prima = crea("button", "mese-nav", "‹");
   prima.type = "button";
-  prima.setAttribute("aria-label", "Mese precedente");
+  prima.setAttribute("aria-label", t("mese_prec"));
   prima.disabled = stato.mese <= primoMese;
   prima.addEventListener("click", () => cambiaMese(spostaMese(stato.mese, -1)));
 
   const dopo = crea("button", "mese-nav", "›");
   dopo.type = "button";
-  dopo.setAttribute("aria-label", "Mese successivo");
+  dopo.setAttribute("aria-label", t("mese_succ"));
   dopo.disabled = stato.mese >= ultimoMese;
   dopo.addEventListener("click", () => cambiaMese(spostaMese(stato.mese, 1)));
 
   const scelta = crea("select", "mese-scelta");
-  scelta.setAttribute("aria-label", "Mese");
+  scelta.setAttribute("aria-label", t("mese"));
   for (let m = primoMese; m <= ultimoMese; m = spostaMese(m, 1)) {
     const o = crea("option", null, testoMese(m));
     o.value = m;
@@ -127,7 +132,7 @@ function disegnaCalendario() {
   const griglia = crea("div", "griglia-giorni");
   griglia.setAttribute("role", "group");
   griglia.setAttribute("aria-label", testoMese(stato.mese));
-  for (const g of INTESTAZIONI) griglia.append(crea("span", "intestazione-giorno", g));
+  for (const g of intestazioni()) griglia.append(crea("span", "intestazione-giorno", g));
 
   const primo = `${stato.mese}-01`;
   const vuoti = (giornoSettimana(primo) + 6) % 7;
@@ -139,7 +144,7 @@ function disegnaCalendario() {
     b.type = "button";
     b.disabled = fuori || chiuso;
     b.setAttribute("aria-pressed", String(iso === stato.data));
-    b.setAttribute("aria-label", `${testoData(iso)}${chiuso ? ", chiuso" : fuori ? ", non prenotabile" : ""}`);
+    b.setAttribute("aria-label", `${testoData(iso)}${chiuso ? `, ${t("chiuso")}` : fuori ? `, ${t("non_prenotabile")}` : ""}`);
     b.addEventListener("click", () => scegliGiorno(iso));
     griglia.append(b);
   }
@@ -161,7 +166,7 @@ function scegliGiorno(iso) {
   stato.ora = null;
   stato.mese = iso.slice(0, 7);
   disegnaCalendario();
-  $("data-scelta").textContent = `Hai scelto ${testoData(iso)}.`;
+  $("data-scelta").textContent = t("hai_scelto", { data: testoData(iso) });
   caricaFasce();
 }
 
@@ -170,11 +175,12 @@ async function caricaFasce() {
   const richiesta = ++ultimaRichiesta;
   aggiornaInvio();
   try {
-    const r = await fetch(`/api/disponibilita?data=${stato.data}&persone=${stato.persone}`);
+    const r = await fetch(`/api/disponibilita?data=${stato.data}&persone=${stato.persone}&lingua=${lingua()}`);
     const dati = await r.json();
     if (richiesta !== ultimaRichiesta) return;
     if (!r.ok) throw new Error(dati.errore);
     stato.slot = dati.chiuso ? [] : dati.slot;
+    stato.motivo = dati.chiuso ? dati.motivo : "";
     if (dati.chiuso) {
       $("fasce").replaceChildren(crea("p", "stato", dati.motivo));
     } else {
@@ -183,7 +189,7 @@ async function caricaFasce() {
     }
   } catch (e) {
     if (richiesta !== ultimaRichiesta) return;
-    $("fasce").replaceChildren(crea("p", "stato", e.message || "Non riesco a caricare gli orari. Ricarica la pagina."));
+    $("fasce").replaceChildren(crea("p", "stato", e.message || t("errore_orari")));
   }
   aggiornaInvio();
 }
@@ -193,12 +199,12 @@ function disegnaFasce() {
   box.replaceChildren();
   const servizi = [...new Set(stato.slot.map((s) => s.servizio))];
   let liberi = 0;
-  for (const servizio of servizi) {
-    box.append(crea("p", "servizio", servizio));
+  for (const nome of servizi) {
+    box.append(crea("p", "servizio", servizio(nome)));
     const griglia = crea("div", "orari");
     griglia.setAttribute("role", "radiogroup");
-    griglia.setAttribute("aria-label", servizio);
-    for (const s of stato.slot.filter((x) => x.servizio === servizio)) {
+    griglia.setAttribute("aria-label", servizio(nome));
+    for (const s of stato.slot.filter((x) => x.servizio === nome)) {
       const b = crea("button", "orario");
       b.type = "button";
       b.setAttribute("role", "radio");
@@ -206,7 +212,7 @@ function disegnaFasce() {
       b.disabled = !s.disponibile;
       b.append(crea("span", "ora", s.ora));
       if (s.sconto) b.append(crea("span", "sconto", `-${s.sconto}%`));
-      b.setAttribute("aria-label", `${s.ora}${s.sconto ? `, sconto ${s.sconto}%` : ""}${s.disponibile ? "" : ", non disponibile"}`);
+      b.setAttribute("aria-label", `${s.ora}${s.sconto ? `, ${t("sconto", { n: s.sconto })}` : ""}${s.disponibile ? "" : `, ${t("non_disponibile")}`}`);
       if (s.disponibile) liberi += 1;
       b.addEventListener("click", () => {
         stato.ora = s.ora;
@@ -217,26 +223,24 @@ function disegnaFasce() {
     }
     box.append(griglia);
   }
-  if (!liberi) {
-    box.append(crea("p", "stato", `Nessun tavolo libero per ${persone(stato.persone)} in questa data. Prova un altro giorno.`));
-  }
+  if (!liberi) box.append(crea("p", "stato", t("nessun_tavolo", { persone: persone(stato.persone) })));
 }
 
 function aggiornaInvio() {
   const invia = $("invia");
   const scelto = stato.slot.find((s) => s.ora === stato.ora);
   invia.disabled = !scelto;
-  invia.textContent = scelto ? `Prenota per ${persone(stato.persone)} alle ${scelto.ora}` : "Scegli un orario";
+  invia.textContent = scelto ? t("prenota_per", { persone: persone(stato.persone), ora: scelto.ora }) : t("scegli_orario");
   const promo = $("promo-scelta");
   promo.hidden = !scelto?.sconto;
-  if (scelto?.sconto) promo.textContent = `Con questo orario hai uno sconto del ${scelto.sconto}% sul conto alla carta, bevande escluse.`;
+  if (scelto?.sconto) promo.textContent = t("promo", { n: scelto.sconto });
 }
 
 function aggiornaCanale() {
   const canale = new FormData(modulo).get("canale");
   const email = modulo.querySelector("[name=email]");
   email.required = canale === "email";
-  $("etichetta-email").textContent = canale === "email" ? "Email" : "Email (facoltativa)";
+  $("etichetta-email").textContent = canale === "email" ? t("email") : t("email_facoltativa");
 }
 
 function mostraErrore(testo) {
@@ -256,7 +260,7 @@ modulo.addEventListener("submit", async (evento) => {
   const campi = new FormData(modulo);
   const invia = $("invia");
   invia.disabled = true;
-  invia.textContent = "Invio la prenotazione";
+  invia.textContent = t("invio");
   try {
     const r = await fetch("/api/prenotazioni", {
       method: "POST",
@@ -272,42 +276,44 @@ modulo.addEventListener("submit", async (evento) => {
         canale: campi.get("canale"),
         note: campi.get("note"),
         privacy: campi.get("privacy") === "on",
+        marketing: campi.get("marketing") === "on",
+        lingua: lingua(),
         sito: campi.get("sito"),
       }),
     });
     const dati = await r.json();
     if (!r.ok) throw new Error(dati.errore);
-    mostraConferma(dati, campi.get("nome").trim(), campi.get("canale"));
+    stato.conferma = { ...dati, nome: campi.get("nome").trim(), canale: campi.get("canale"), data: stato.data, ora: stato.ora, persone: stato.persone };
+    mostraConferma();
+    $("conferma").hidden = false;
+    modulo.hidden = true;
+    $("conferma").focus();
   } catch (e) {
-    mostraErrore(e.message || "Prenotazione non inviata. Controlla la connessione e riprova.");
+    mostraErrore(e.message || t("errore_invio"));
     await caricaFasce();
   }
 });
 
-function mostraConferma(dati, nome, canale) {
-  const link = `${location.origin}/prenotazione#id=${dati.id}&t=${dati.token}`;
-  const via = NOMI_CANALE[canale] ?? "email";
-  const sconto = dati.sconto ? ` Lo sconto del ${dati.sconto}% è già registrato.` : "";
-  $("riepilogo").textContent = `${testoData(stato.data)} alle ${stato.ora}, ${persone(stato.persone)}, a nome ${nome}.`;
-  $("codice").textContent = dati.codice;
-  $("titolo-conferma").textContent = dati.stato === "confermata" ? "Prenotazione confermata" : "Prenotazione ricevuta";
-  $("stato-conferma").textContent =
-    dati.stato === "confermata"
-      ? `Ti aspettiamo. Riceverai il riepilogo via ${via}.${sconto}`
-      : `Il ristorante deve ancora confermarla: quando lo farà riceverai un messaggio via ${via}.${sconto}`;
+function mostraConferma() {
+  const c = stato.conferma;
+  if (!c) return;
+  const l = lingua() === "it" ? "" : `&l=${lingua()}`;
+  const link = `${location.origin}/prenotazione#id=${c.id}&t=${c.token}${l}`;
+  const via = NOMI_CANALE[c.canale] ?? "email";
+  const sconto = c.sconto ? ` ${t("sconto_registrato", { n: c.sconto })}` : "";
+  $("riepilogo").textContent = t("riepilogo", { data: testoData(c.data), ora: c.ora, persone: persone(c.persone), nome: c.nome });
+  $("codice").textContent = c.codice;
+  $("titolo-conferma").textContent = c.stato === "confermata" ? t("confermata") : t("ricevuta");
+  $("stato-conferma").textContent = (c.stato === "confermata" ? t("stato_confermata", { via }) : t("stato_attesa", { via })) + sconto;
   $("link-gestione").href = link;
-  $("copia-link").textContent = "Copia il link";
-  modulo.hidden = true;
-  $("conferma").hidden = false;
-  $("conferma").focus();
 }
 
 $("copia-link").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("link-gestione").href);
-    $("copia-link").textContent = "Link copiato";
+    $("copia-link").textContent = t("link_copiato");
   } catch {
-    $("copia-link").textContent = "Copia non riuscita: tieni premuto sul link";
+    $("copia-link").textContent = t("copia_fallita");
   }
 });
 
@@ -317,9 +323,26 @@ $("nuova").addEventListener("click", () => {
   modulo.hidden = false;
   $("conferma").hidden = true;
   stato.ora = null;
+  stato.conferma = null;
   caricaFasce();
   $("invia").focus();
 });
 
+/** Cambio di lingua: tutto si ridisegna senza perdere giorno, orario e dati già scritti. */
+quandoCambia(() => {
+  testiRistorante();
+  aggiornaCanale();
+  if (!stato.info) return;
+  creaPersone();
+  disegnaCalendario();
+  if (stato.data) $("data-scelta").textContent = t("hai_scelto", { data: testoData(stato.data) });
+  if (stato.motivo) caricaFasce();
+  else if (stato.slot.length) disegnaFasce();
+  aggiornaInvio();
+  mostraConferma();
+});
+
+selettoreLingua($("scelta-lingua"));
+applicaTesti();
 aggiornaCanale();
 caricaInfo().catch((e) => $("fasce").replaceChildren(crea("p", "stato", e.message)));

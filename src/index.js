@@ -1,14 +1,12 @@
 import {
   agenda,
   eliminaMedia,
-  elencoClienti,
   invioManuale,
   mostraMedia,
   periodo,
   salvaMedia,
   leggiConfigurazione,
   leggiSala,
-  modificaCliente,
   modificaPrenotazione,
   nuovaPrenotazioneGestore,
   salvaConfigurazione,
@@ -16,6 +14,10 @@ import {
   statistiche,
 } from "./gestione.js";
 import { annullaPrenotazione, disponibilita, infoRistorante, leggiPrenotazione, nuovaPrenotazione } from "./pubblico.js";
+import { dettaglioCliente, elencoClienti, esportaClienti, modificaCliente } from "./clienti.js";
+import { leggiMenu, menuPubblico, qrCode, salvaMenu } from "./menu.js";
+import { elaboraRecensioni } from "./notifiche.js";
+import { riceviWebhook, statoWhatsApp, verificaWebhook } from "./whatsapp.js";
 import {
   ErroreRichiesta,
   base64url,
@@ -68,13 +70,19 @@ async function gestisciApi(request, env, url, ctx) {
   const { pathname: p } = url;
   const m = request.method;
 
+  // Il webhook di Meta arriva da un altro sito: è protetto dalla firma, non dal controllo di origine.
+  if (p === "/api/whatsapp/webhook" && m === "GET") return verificaWebhook(url, env);
+  if (p === "/api/whatsapp/webhook" && m === "POST") return riceviWebhook(request, env);
+
   if (m !== "GET" && m !== "HEAD") {
     const origine = request.headers.get("origin");
     if (!origine || new URL(origine).host !== url.host) return errore("Origine non consentita.", 403);
   }
 
   if (p === "/api/ristorante" && m === "GET") return infoRistorante(env);
-  if (p === "/api/disponibilita" && m === "GET") return disponibilita(url, env);
+  if (p === "/api/disponibilita" && m === "GET") return disponibilita(request, url, env);
+  if (p === "/api/menu" && m === "GET") return menuPubblico(url, env);
+  if (p === "/api/qr" && m === "GET") return qrCode(url, env);
   if (p === "/api/prenotazioni" && m === "POST") return nuovaPrenotazione(request, env, ctx);
   const media = p.match(/^\/api\/media\/(logo|foto)$/);
   if (media && m === "GET") return mostraMedia(env, media[1]);
@@ -90,7 +98,7 @@ async function gestisciApi(request, env, url, ctx) {
       return json({ ok: true, ambiente: env.APP_ENV, nome: imp.nome });
     }
     if (p === "/api/admin/logout" && m === "POST") return json({ ok: true }, 200, { "set-cookie": cookieSessione("", 0) });
-    if (p === "/api/admin/agenda" && m === "GET") return agenda(url, env);
+    if (p === "/api/admin/agenda" && m === "GET") return agenda(url, env, ctx);
     if (p === "/api/admin/periodo" && m === "GET") return periodo(url, env);
     if (p === "/api/admin/prenotazioni" && m === "POST") return nuovaPrenotazioneGestore(request, env, ctx);
     const pren = p.match(/^\/api\/admin\/prenotazioni\/([0-9a-f-]{36})(\/notifica)?$/);
@@ -101,8 +109,13 @@ async function gestisciApi(request, env, url, ctx) {
     if (p === "/api/admin/configurazione" && m === "GET") return leggiConfigurazione(env);
     if (p === "/api/admin/configurazione" && m === "PUT") return salvaConfigurazione(request, env);
     if (p === "/api/admin/clienti" && m === "GET") return elencoClienti(url, env);
+    if (p === "/api/admin/clienti.csv" && m === "GET") return esportaClienti(url, env);
     const cliente = p.match(/^\/api\/admin\/clienti\/([0-9a-f-]{36})$/);
+    if (cliente && m === "GET") return dettaglioCliente(env, cliente[1]);
     if (cliente && m === "PATCH") return modificaCliente(request, env, cliente[1]);
+    if (p === "/api/admin/menu" && m === "GET") return leggiMenu(env);
+    if (p === "/api/admin/menu" && m === "PUT") return salvaMenu(request, env);
+    if (p === "/api/admin/whatsapp" && m === "GET") return statoWhatsApp(url, env);
     if (p === "/api/admin/statistiche" && m === "GET") return statistiche(url, env);
     const mediaAdmin = p.match(/^\/api\/admin\/media\/(logo|foto)$/);
     if (mediaAdmin && m === "PUT") return salvaMedia(request, env, mediaAdmin[1]);
@@ -122,5 +135,10 @@ export default {
       console.error(e);
       return errore("Si è verificato un errore. Riprova tra poco.", 500);
     }
+  },
+
+  /** Cron Trigger: ogni 15 minuti invia le richieste di recensione maturate. */
+  async scheduled(evento, env, ctx) {
+    ctx.waitUntil(elaboraRecensioni(env));
   },
 };

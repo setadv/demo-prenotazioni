@@ -10,73 +10,80 @@
 </head>
 <body class="pagina">
   <aside class="insegna">
+    <div id="scelta-lingua" class="scelta-lingua"></div>
     <div class="insegna-testo">
       <img id="logo" class="logo" alt="" hidden>
       <h1 id="nome-ristorante">Prenota un tavolo</h1>
       <p id="indirizzo"></p>
       <p id="prezzo"></p>
+      <a class="link-menu" href="/menu" data-t="vedi_menu">Guarda il menù</a>
     </div>
     <img id="foto" class="foto" alt="La sala del ristorante" hidden>
     <p id="descrizione" class="descrizione"></p>
-    <p class="avviso">Demo di SETADV: ristorante e prenotazioni sono inventati. Non inserire dati reali.</p>
+    <p class="avviso" data-t="avviso_demo">Demo di SETADV: ristorante e prenotazioni sono inventati. Non inserire dati reali.</p>
   </aside>
 
   <main class="prenota">
     <form id="modulo" novalidate>
       <fieldset>
-        <legend>Quanti siete?</legend>
-        <div id="persone" class="scelte" role="radiogroup" aria-label="Numero di persone"></div>
+        <legend data-t="quanti">Quanti siete?</legend>
+        <div id="persone" class="scelte" role="radiogroup" aria-label="Numero di persone" data-t-aria="numero_persone"></div>
         <p id="gruppi" class="legenda"></p>
       </fieldset>
 
       <fieldset>
-        <legend>Quando?</legend>
+        <legend data-t="quando">Quando?</legend>
         <div id="calendario" class="calendario"></div>
         <p id="data-scelta" class="data-scelta" aria-live="polite"></p>
       </fieldset>
 
       <fieldset>
-        <legend>A che ora?</legend>
-        <div id="fasce" aria-live="polite"><p class="stato">Carico gli orari disponibili.</p></div>
+        <legend data-t="a_che_ora">A che ora?</legend>
+        <div id="fasce" aria-live="polite"><p class="stato" data-t="carico_orari">Carico gli orari disponibili.</p></div>
         <p id="promo-scelta" class="promo-nota" hidden></p>
       </fieldset>
 
       <fieldset>
-        <legend>I tuoi dati</legend>
+        <legend data-t="tuoi_dati">I tuoi dati</legend>
         <div class="campi">
-          <label>Nome e cognome
+          <label><span data-t="nome">Nome e cognome</span>
             <input name="nome" autocomplete="name" required minlength="2" maxlength="80" placeholder="Maria Esposito">
           </label>
-          <label>Telefono
+          <label><span data-t="telefono">Telefono</span>
             <input name="telefono" type="tel" autocomplete="tel" required maxlength="30" placeholder="333 0000000">
           </label>
           <label><span id="etichetta-email">Email</span>
             <input name="email" type="email" autocomplete="email" maxlength="254" placeholder="maria@esempio.it">
           </label>
-          <label>Occasione
+          <label><span data-t="occasione">Occasione</span>
             <select name="occasione">
-              <option value="">Nessuna in particolare</option>
-              <option value="compleanno">Compleanno</option>
-              <option value="anniversario">Anniversario</option>
-              <option value="romantica">Cena romantica</option>
-              <option value="lavoro">Pranzo o cena di lavoro</option>
-              <option value="famiglia">In famiglia</option>
-              <option value="altro">Altro</option>
+              <option value="" data-t="occ_nessuna">Nessuna in particolare</option>
+              <option value="compleanno" data-t="occ_compleanno">Compleanno</option>
+              <option value="anniversario" data-t="occ_anniversario">Anniversario</option>
+              <option value="romantica" data-t="occ_romantica">Cena romantica</option>
+              <option value="lavoro" data-t="occ_lavoro">Pranzo o cena di lavoro</option>
+              <option value="famiglia" data-t="occ_famiglia">In famiglia</option>
+              <option value="altro" data-t="occ_altro">Altro</option>
             </select>
           </label>
           <fieldset class="largo canali">
-            <legend class="etichetta-campo">Come vuoi ricevere la conferma?</legend>
+            <legend class="etichetta-campo" data-t="canale_domanda">Come vuoi ricevere la conferma?</legend>
             <label class="spunta"><input type="radio" name="canale" value="email" checked> Email</label>
             <label class="spunta"><input type="radio" name="canale" value="sms"> SMS</label>
             <label class="spunta"><input type="radio" name="canale" value="whatsapp"> WhatsApp</label>
           </fieldset>
-          <label class="largo">Richieste per il ristorante (facoltative)
-            <textarea name="note" rows="2" maxlength="300" placeholder="Seggiolone, intolleranze, tavolo all'aperto"></textarea>
+          <label class="largo"><span data-t="note">Richieste per il ristorante (facoltative)</span>
+            <textarea name="note" rows="2" maxlength="300" placeholder="Seggiolone, intolleranze, tavolo all'aperto" data-t-placeholder="note_esempio"></textarea>
           </label>
           <label class="spunta largo">
             <input type="checkbox" name="privacy" required>
-            <span>Accetto che i miei dati siano usati solo per gestire questa prenotazione.</span>
+            <span data-t="privacy">Accetto che i miei dati siano usati solo per gestire questa prenotazione.</span>
           </label>
+          <label class="spunta largo">
+            <input type="checkbox" name="marketing">
+            <span data-t="marketing">Voglio ricevere novità e offerte dal ristorante (facoltativo).</span>
+          </label>
+          <p class="legenda largo" data-t="info_recensione">Dopo la visita potremmo mandarti un solo messaggio per chiederti un parere.</p>
           <label class="esca" aria-hidden="true">Sito
             <input name="sito" tabindex="-1" autocomplete="off">
           </label>
@@ -90,14 +97,14 @@
     <section id="conferma" class="conferma" hidden tabindex="-1">
       <h2 id="titolo-conferma">Prenotazione ricevuta</h2>
       <p id="riepilogo"></p>
-      <p class="codice">Codice <strong id="codice"></strong></p>
+      <p class="codice"><span data-t="codice">Codice</span> <strong id="codice"></strong></p>
       <p id="stato-conferma"></p>
-      <p>Salva questo link: ti serve per vedere o annullare la prenotazione.</p>
+      <p data-t="salva_link">Salva questo link: ti serve per vedere o annullare la prenotazione.</p>
       <div class="link-gestione">
-        <a id="link-gestione" href="/prenotazione">Gestisci la prenotazione</a>
-        <button id="copia-link" class="secondario" type="button">Copia il link</button>
+        <a id="link-gestione" href="/prenotazione" data-t="gestisci">Gestisci la prenotazione</a>
+        <button id="copia-link" class="secondario" type="button" data-t="copia_link">Copia il link</button>
       </div>
-      <button id="nuova" class="azione" type="button">Fai un'altra prenotazione</button>
+      <button id="nuova" class="azione" type="button" data-t="nuova">Fai un'altra prenotazione</button>
     </section>
   </main>
   <script src="/prenota.js" type="module"></script>

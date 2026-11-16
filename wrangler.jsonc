@@ -9,6 +9,8 @@
     "run_worker_first": ["/api/*"]
   },
   "observability": { "enabled": true },
+  // Richieste di recensione: controllate ogni 15 minuti.
+  "triggers": { "crons": ["*/15 * * * *"] },
   "vars": { "APP_ENV": "production" },
   "d1_databases": [
     {
