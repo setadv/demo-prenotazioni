@@ -5,6 +5,8 @@ const LOCALI = { it: "it-IT", en: "en-GB", de: "de-DE", fr: "fr-FR", es: "es-ES"
 
 const TESTI = {
   it: {
+    menu_invito: "Vuoi sapere cosa si mangia?",
+    nuova_scheda: "(si apre in una nuova scheda)",
     lingua: "Lingua",
     titolo_prenota: "Prenota un tavolo",
     titolo_documento: "{nome}, prenota un tavolo",
@@ -112,6 +114,8 @@ const TESTI = {
     al_gestore: "Pagina del ristorante",
   },
   en: {
+    menu_invito: "Want to see what's cooking?",
+    nuova_scheda: "(opens in a new tab)",
     lingua: "Language",
     titolo_prenota: "Book a table",
     titolo_documento: "{nome}, book a table",
@@ -217,6 +221,8 @@ const TESTI = {
     al_gestore: "Restaurant page",
   },
   de: {
+    menu_invito: "Möchten Sie sehen, was es gibt?",
+    nuova_scheda: "(öffnet sich in einem neuen Tab)",
     lingua: "Sprache",
     titolo_prenota: "Tisch reservieren",
     titolo_documento: "{nome}, Tisch reservieren",
@@ -322,6 +328,8 @@ const TESTI = {
     al_gestore: "Seite des Restaurants",
   },
   fr: {
+    menu_invito: "Envie de voir la carte ?",
+    nuova_scheda: "(s'ouvre dans un nouvel onglet)",
     lingua: "Langue",
     titolo_prenota: "Réserver une table",
     titolo_documento: "{nome}, réserver une table",
@@ -427,6 +435,8 @@ const TESTI = {
     al_gestore: "Page du restaurant",
   },
   es: {
+    menu_invito: "¿Quieres ver qué hay de comer?",
+    nuova_scheda: "(se abre en una pestaña nueva)",
     lingua: "Idioma",
     titolo_prenota: "Reserva una mesa",
     titolo_documento: "{nome}, reserva una mesa",

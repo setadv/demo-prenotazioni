@@ -36,6 +36,11 @@ async function caricaInfo() {
   creaCalendario();
 }
 
+/** I link al menù aprono la stessa lingua scelta nel modulo. */
+function aggiornaLinkMenu() {
+  for (const a of document.querySelectorAll(".apri-menu")) a.href = lingua() === "it" ? "/menu" : `/menu?lang=${lingua()}`;
+}
+
 /** Testi della colonna del ristorante: cambiano con la lingua. */
 function testiRistorante() {
   const info = stato.info;
@@ -330,6 +335,7 @@ $("nuova").addEventListener("click", () => {
 
 /** Cambio di lingua: tutto si ridisegna senza perdere giorno, orario e dati già scritti. */
 quandoCambia(() => {
+  aggiornaLinkMenu();
   testiRistorante();
   aggiornaCanale();
   if (!stato.info) return;
@@ -344,5 +350,6 @@ quandoCambia(() => {
 
 selettoreLingua($("scelta-lingua"));
 applicaTesti();
+aggiornaLinkMenu();
 aggiornaCanale();
 caricaInfo().catch((e) => $("fasce").replaceChildren(crea("p", "stato", e.message)));

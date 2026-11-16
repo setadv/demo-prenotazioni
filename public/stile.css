@@ -290,3 +290,21 @@ input::placeholder, textarea::placeholder { color: #70837b; }
 .cta-menu { display: inline-block; width: auto; margin-top: 1.5rem; padding: .8rem 1.4rem; text-decoration: none; }
 
 .testa-menu-riga .link-menu { margin-top: 0; }
+
+.invito-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem 1rem;
+  margin: 0 0 2rem;
+  padding: .8rem 1rem;
+  background: var(--bianco);
+  border: 1px solid var(--linea);
+  border-left: 4px solid var(--melograno);
+  border-radius: 6px;
+}
+.invito-menu > span { font-weight: 600; }
+.invito-menu .secondario { color: var(--melograno); font-weight: 600; text-decoration: none; border-color: var(--melograno); }
+.invito-menu .secondario::after { content: " ↗"; }
+.visivamente-nascosto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

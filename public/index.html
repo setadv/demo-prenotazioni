@@ -16,7 +16,7 @@
       <h1 id="nome-ristorante">Prenota un tavolo</h1>
       <p id="indirizzo"></p>
       <p id="prezzo"></p>
-      <a class="link-menu" href="/menu" data-t="vedi_menu">Guarda il menù</a>
+      <a class="link-menu apri-menu" href="/menu" target="_blank" rel="noopener" data-t="vedi_menu">Guarda il menù</a>
     </div>
     <img id="foto" class="foto" alt="La sala del ristorante" hidden>
     <p id="descrizione" class="descrizione"></p>
@@ -25,6 +25,10 @@
 
   <main class="prenota">
     <form id="modulo" novalidate>
+      <p class="invito-menu">
+        <span data-t="menu_invito">Vuoi sapere cosa si mangia?</span>
+        <a class="secondario apri-menu" href="/menu" target="_blank" rel="noopener"><span data-t="vedi_menu">Guarda il menù</span><span class="visivamente-nascosto" data-t="nuova_scheda">(si apre in una nuova scheda)</span></a>
+      </p>
       <fieldset>
         <legend data-t="quanti">Quanti siete?</legend>
         <div id="persone" class="scelte" role="radiogroup" aria-label="Numero di persone" data-t-aria="numero_persone"></div>
@@ -104,6 +108,7 @@
         <a id="link-gestione" href="/prenotazione" data-t="gestisci">Gestisci la prenotazione</a>
         <button id="copia-link" class="secondario" type="button" data-t="copia_link">Copia il link</button>
       </div>
+      <p><a class="apri-menu torna" href="/menu" target="_blank" rel="noopener" data-t="vedi_menu">Guarda il menù</a></p>
       <button id="nuova" class="azione" type="button" data-t="nuova">Fai un'altra prenotazione</button>
     </section>
   </main>
