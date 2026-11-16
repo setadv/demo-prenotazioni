@@ -11,6 +11,7 @@ const STATI = {
 const FILTRI = { "": "Tutti", attivo: "Attivi", prova: "In prova", prova_scaduta: "Prova scaduta", da_pagare: "Da pagare", sospeso: "Sospesi", disattivato: "Disattivati" };
 const AZIONI = {
   ristorante_creato: "Ristorante creato",
+  iscrizione: "Iscrizione dal sito",
   ristorante_modificato: "Dati modificati",
   ristorante_cancellato: "Ristorante cancellato",
   stato_attivo: "Attivato",

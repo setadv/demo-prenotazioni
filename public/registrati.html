@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Prova gratis le prenotazioni online per il tuo ristorante</title>
+  <meta name="description" content="Prenotazioni online senza commissioni, menù con QR, recensioni e WhatsApp per il tuo ristorante. Prova gratuita.">
+  <link rel="stylesheet" href="/stile.css">
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body class="pagina iscrizione">
+  <aside class="insegna">
+    <div class="insegna-testo">
+      <h1>Il tuo ristorante, prenotabile online da oggi</h1>
+      <p class="sottotitolo">Prova gratis per <span class="giorni-prova">14</span> giorni. Senza carta di credito, senza commissioni sui coperti.</p>
+    </div>
+    <ul class="vantaggi">
+      <li><strong>Prenotazioni 24 ore su 24</strong> dal tuo sito, da Google e dai social, con tavoli assegnati in automatico.</li>
+      <li><strong>Menù online con QR</strong> per ogni tavolo, con allergeni e cinque lingue.</li>
+      <li><strong>Meno tavoli vuoti</strong>: conferme e promemoria via email, SMS o WhatsApp.</li>
+      <li><strong>Più recensioni</strong>: dopo la visita il cliente riceve il link giusto al momento giusto.</li>
+      <li><strong>I clienti restano tuoi</strong>: schede, compleanni, preferenze ed esportazione quando vuoi.</li>
+    </ul>
+    <p class="avviso">Pronto in due minuti: crei l'account, imposti orari e tavoli, condividi il link.</p>
+  </aside>
+
+  <main class="prenota">
+    <form id="modulo" novalidate>
+      <fieldset>
+        <legend>Scegli il piano da provare</legend>
+        <div id="piani" class="piani" role="radiogroup" aria-label="Piano"></div>
+        <p class="aiuto">Durante la prova hai tutte le funzioni del piano scelto. Puoi cambiarlo quando vuoi.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Il tuo locale</legend>
+        <div class="campi">
+          <label class="largo">Nome del ristorante
+            <input name="nome_locale" required maxlength="80" autocomplete="organization" placeholder="Trattoria da Mario">
+          </label>
+          <label>Il tuo nome e cognome
+            <input name="nome" required maxlength="80" autocomplete="name">
+          </label>
+          <label>Telefono
+            <input name="telefono" type="tel" maxlength="30" autocomplete="tel" placeholder="Per aiutarti ad avviare il servizio">
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Il tuo accesso</legend>
+        <div class="campi">
+          <label>Email
+            <input name="email" type="email" required autocomplete="email">
+          </label>
+          <label>Password
+            <input name="password" type="password" required minlength="10" autocomplete="new-password">
+            <span class="aiuto">Almeno 10 caratteri.</span>
+          </label>
+        </div>
+        <label class="nascosto" aria-hidden="true">Sito web
+          <input name="sito" tabindex="-1" autocomplete="off">
+        </label>
+      </fieldset>
+
+      <label class="spunta">
+        <input type="checkbox" name="consenso" required>
+        <span id="testo-consenso">Accetto le condizioni del servizio e il trattamento dei miei dati per attivare l'account.</span>
+      </label>
+      <p id="errore" class="messaggio" role="alert" hidden></p>
+      <button id="invia" class="azione" type="submit">Crea il mio account gratis</button>
+      <p class="legenda">Hai già un account? <a href="/admin">Accedi</a></p>
+    </form>
+    <section id="chiuse" hidden>
+      <h2>Iscrizioni momentaneamente chiuse</h2>
+      <p>Scrivici e ti attiviamo noi il servizio.</p>
+    </section>
+  </main>
+  <script src="/registrati.js" type="module"></script>
+</body>
+</html>

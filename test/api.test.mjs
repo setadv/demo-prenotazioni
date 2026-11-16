@@ -1093,6 +1093,44 @@ test("sospensione, assistenza, esportazione e cancellazione", async () => {
   assert.equal((await (await piattaforma("/api/piattaforma/riepilogo")).json()).totale, 1);
 });
 
+test("un ristorante si iscrive da solo e parte in prova", async () => {
+  const info = await (await chiama("/api/registrati")).json();
+  assert.equal(info.aperte, true);
+  assert.equal(info.giorni_prova, 14);
+  assert.ok(info.piani.pro.moduli.length);
+  const dati = { nome_locale: "Osteria Nuova", nome: "Lucia Neri", email: "Lucia@Nuova.it", telefono: "333 1234567", password: "password-di-lucia", piano: "pro", consenso: true };
+  assert.equal((await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.1" }, body: { ...dati, consenso: false } })).status, 400);
+  assert.equal((await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.1" }, body: { ...dati, password: "corta" } })).status, 400);
+  const r = await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.1" }, body: dati });
+  assert.equal(r.status, 201, await r.clone().text());
+  const esito = await r.json();
+  assert.match(esito.indirizzo, /\?r=osteria-nuova$/);
+  const titolare = con(cookieDa(r));
+  const s = await (await titolare("/api/admin/sessione")).json();
+  assert.equal(s.nome, "Osteria Nuova");
+  assert.equal(s.utente.ruolo, "titolare");
+  assert.equal(s.ristorante.stato, "prova");
+  assert.deepEqual(s.ristorante.moduli.sort(), ["fidelity", "gift", "sondaggi", "whatsapp"]);
+  assert.equal((await (await titolare("/api/admin/sala")).json()).tavoli.length, 6);
+  // Benvenuto al titolare e avviso al super amministratore.
+  assert.ok(await attendiInvio((v) => v.json?.to?.[0] === "lucia@nuova.it" && /prova gratuita/.test(v.json.text)));
+  const avviso = await attendiInvio((v) => v.json?.to?.[0] === "super@esempio.it" && /Osteria Nuova/.test(v.json.subject));
+  assert.match(avviso.json.text, /Lucia Neri/);
+  // Stessa email: no; stesso nome: indirizzo con un numero.
+  assert.equal((await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.2" }, body: dati })).status, 409);
+  const due = await (await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.2" }, body: { ...dati, email: "altra@nuova.it" } })).json();
+  assert.match(due.indirizzo, /\?r=osteria-nuova-2$/);
+  // Limite: tre iscrizioni l'ora dalla stessa connessione; il campo trappola non crea nulla.
+  for (const email of ["a@x.it", "b@x.it"]) await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.3" }, body: { ...dati, email } });
+  await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.3" }, body: { ...dati, email: "c@x.it" } });
+  assert.equal((await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.3" }, body: { ...dati, email: "d@x.it" } })).status, 429);
+  const prima = (await (await piattaforma("/api/piattaforma/ristoranti")).json()).ristoranti.length;
+  assert.equal((await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.4" }, body: { ...dati, email: "bot@x.it", sito: "http://spam" } })).status, 201);
+  assert.equal((await (await piattaforma("/api/piattaforma/ristoranti")).json()).ristoranti.length, prima);
+  const registro = await (await piattaforma("/api/piattaforma/registro")).json();
+  assert.ok(registro.registro.some((x) => x.azione === "iscrizione" && /Osteria Nuova, piano Pro/.test(x.dettaglio)));
+});
+
 test("dopo il logout il cookie viene cancellato", async () => {
   const r = await admin("/api/admin/logout", { method: "POST" });
   assert.match(r.headers.get("set-cookie"), /Max-Age=0/);

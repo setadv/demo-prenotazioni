@@ -83,6 +83,7 @@ import {
   statoEffettivo,
 } from "./ristoranti.js";
 import { MODULI, PIANI } from "./predefiniti.js";
+import { infoIscrizione, iscriviRistorante } from "./iscrizione.js";
 
 const ID = "[0-9a-f-]{36}";
 
@@ -146,6 +147,8 @@ async function gestisciApi(request, env, url, ctx) {
   // Account: scelta della password e recupero.
   if (p === "/api/accesso/imposta" && m === "POST") return impostaPassword(request, env);
   if (p === "/api/accesso/recupera" && m === "POST") return recuperaPassword(request, env);
+  if (p === "/api/registrati" && m === "GET") return infoIscrizione(env);
+  if (p === "/api/registrati" && m === "POST") return iscriviRistorante(request, env, ctx);
 
   if (p.startsWith("/api/piattaforma/")) return apiPiattaforma(request, env, url);
 

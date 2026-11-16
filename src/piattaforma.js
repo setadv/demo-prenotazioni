@@ -196,43 +196,18 @@ export async function creaRistorante(request, env, superadmin) {
     throw new ErroreRichiesta("Esiste già un account con l'email del titolare.", 409);
   }
 
-  const id = crypto.randomUUID();
-  const adesso = new Date().toISOString();
-  const stato = giorniProva > 0 ? "prova" : "attivo";
-  const salaId = crypto.randomUUID();
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO ristoranti (id, slug, nome, stato, piano, moduli, prova_fino, prezzo_mensile, contatto_nome, contatto_email,
-         contatto_telefono, note, creato_il, aggiornato_il)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      id,
-      slug,
-      nome,
-      stato,
-      piano,
-      moduli,
-      giorniProva > 0 ? spostaData(oggi(), giorniProva) : null,
-      prezzo,
-      testo(corpo.nome_titolare, 80, { campo: "Il nome del titolare" }),
-      email,
-      testo(corpo.telefono, 30, { campo: "Il telefono" }),
-      testo(corpo.note, 2000, { campo: "Le note" }),
-      adesso,
-      adesso,
-    ),
-    env.DB.prepare("INSERT INTO impostazioni_r (ristorante_id, chiave, valore) VALUES (?, 'nome', ?)").bind(id, nome),
-    env.DB.prepare("INSERT INTO sale (id, nome, ordine, larghezza, altezza, attiva, ristorante_id) VALUES (?, 'Sala', 0, 900, 520, 1, ?)").bind(salaId, id),
-    ...TAVOLI_INIZIALI.map(([n, min, max, forma, x, y, w, hh]) =>
-      env.DB.prepare(
-        `INSERT INTO tavoli (id, sala_id, nome, posti_min, posti_max, forma, x, y, larghezza, altezza, online, attivo, ristorante_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
-      ).bind(crypto.randomUUID(), salaId, n, min, max, forma, x, y, w, hh, id),
-    ),
-    ...ORARI_INIZIALI.map(([g, servizio, inizio, fine]) =>
-      env.DB.prepare("INSERT INTO orari (giorno, servizio, inizio, fine, ristorante_id) VALUES (?, ?, ?, ?, ?)").bind(g, servizio, inizio, fine, id),
-    ),
-  ]);
+  const id = await inserisciRistorante(env, {
+    slug,
+    nome,
+    piano,
+    moduli,
+    giorniProva,
+    prezzo,
+    contattoNome: testo(corpo.nome_titolare, 80, { campo: "Il nome del titolare" }),
+    email,
+    telefono: testo(corpo.telefono, 30, { campo: "Il telefono" }),
+    note: testo(corpo.note, 2000, { campo: "Le note" }),
+  });
   await registra(env, { ristorante: id, autore: superadmin.nome, azione: "ristorante_creato", dettaglio: `${nome} (${PIANI[piano].nome})` });
   const origine = new URL(request.url).origin;
   let invito = null;
@@ -248,6 +223,66 @@ export async function creaRistorante(request, env, superadmin) {
   }
   const r = await ristorantePerId(env, id);
   return json({ ristorante: vista(r), indirizzo: indirizzoRistorante(env, r, origine), invito: invito && { link: invito.link, inviata: invito.inviata } }, 201);
+}
+
+/** Scrive un ristorante nuovo con sala, tavoli e orari di partenza. Usato dalla piattaforma e dall'iscrizione. */
+export async function inserisciRistorante(env, { slug, nome, piano, moduli, giorniProva, prezzo, contattoNome = "", email = "", telefono = "", note = "" }) {
+  const id = crypto.randomUUID();
+  const adesso = new Date().toISOString();
+  const salaId = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO ristoranti (id, slug, nome, stato, piano, moduli, prova_fino, prezzo_mensile, contatto_nome, contatto_email,
+         contatto_telefono, note, creato_il, aggiornato_il)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      id,
+      slug,
+      nome,
+      giorniProva > 0 ? "prova" : "attivo",
+      piano,
+      moduli,
+      giorniProva > 0 ? spostaData(oggi(), giorniProva) : null,
+      prezzo,
+      contattoNome,
+      email,
+      telefono,
+      note,
+      adesso,
+      adesso,
+    ),
+    env.DB.prepare("INSERT INTO impostazioni_r (ristorante_id, chiave, valore) VALUES (?, 'nome', ?)").bind(id, nome),
+    env.DB.prepare("INSERT INTO sale (id, nome, ordine, larghezza, altezza, attiva, ristorante_id) VALUES (?, 'Sala', 0, 900, 520, 1, ?)").bind(salaId, id),
+    ...TAVOLI_INIZIALI.map(([n, min, max, forma, x, y, w, hh]) =>
+      env.DB.prepare(
+        `INSERT INTO tavoli (id, sala_id, nome, posti_min, posti_max, forma, x, y, larghezza, altezza, online, attivo, ristorante_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
+      ).bind(crypto.randomUUID(), salaId, n, min, max, forma, x, y, w, hh, id),
+    ),
+    ...ORARI_INIZIALI.map(([g, servizio, inizio, fine]) =>
+      env.DB.prepare("INSERT INTO orari (giorno, servizio, inizio, fine, ristorante_id) VALUES (?, ?, ?, ?, ?)").bind(g, servizio, inizio, fine, id),
+    ),
+  ]);
+  return id;
+}
+
+/** Indirizzo libero derivato dal nome: se è già preso aggiunge un numero. */
+export async function slugLibero(env, nome) {
+  let base = String(nome)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 34)
+    .replace(/-+$/, "");
+  if (base.length < 2) base = "ristorante";
+  if (RISERVATI.has(base)) base = `${base}-locale`;
+  for (let n = 1; n <= 30; n += 1) {
+    const s = n === 1 ? base : `${base}-${n}`;
+    if (!(await env.DB.prepare("SELECT 1 FROM ristoranti WHERE slug = ?").bind(s).first())) return s;
+  }
+  return `${base}-${crypto.randomUUID().slice(0, 4)}`;
 }
 
 export async function dettaglioRistorante(request, env, id) {

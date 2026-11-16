@@ -58,7 +58,13 @@ Una sola app e un solo database: ogni riga porta l'id del ristorante (`ristorant
 
 **Integrazioni per ristorante.** Le chiavi Stripe e WhatsApp di ogni ristorante si inseriscono nella sua scheda e si salvano cifrate (AES-GCM, chiave da `CHIAVE_CIFRATURA` o da `SESSION_SECRET`). I secret dell'app valgono solo per il ristorante predefinito. Webhook per ristorante: `/api/stripe/webhook/<id>` e `/api/whatsapp/webhook/<indirizzo>`, mostrati nella scheda.
 
+**Iscrizione dal sito.** `/registrati`: il ristorante sceglie il piano, crea l'account e entra subito nel pannello, in prova per 14 giorni con tutte le funzioni del piano. Riceve un'email di benvenuto; tu ricevi un avviso su `SUPERADMIN_EMAIL` e lo trovi nel registro. Massimo 3 iscrizioni l'ora dalla stessa connessione e un campo trappola contro i programmi automatici. A fine prova il ristorante resta in sola consultazione finché non lo attivi tu.
+
 Variabili aggiuntive (facoltative):
+
+- `ISCRIZIONI`: `chiuse` per spegnere l'iscrizione dal sito.
+- `GIORNI_PROVA`: durata della prova per chi si iscrive (di base 14).
+- `LINK_TERMINI`, `LINK_PRIVACY`: indirizzi delle condizioni del servizio e dell'informativa, mostrati nella casella del consenso.
 
 - `SUPERADMIN_EMAIL`: email per il primo accesso a `/piattaforma`.
 - `DOMINIO_BASE`: es. `prenota.tuodominio.it`. Serve un dominio su Cloudflare con un record DNS `*.prenota` e una route del Worker `*.prenota.tuodominio.it/*`. Senza, gli indirizzi sono `/?r=indirizzo`.

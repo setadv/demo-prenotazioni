@@ -660,3 +660,27 @@ input.largo { width: 100%; }
 .contenuto > .blocco + .blocco, .contenuto > .blocco + section, .contenuto > .cifre + .blocco { margin-top: 1rem; }
 .azione.pulsante-link { color: var(--bianco); text-decoration: none; }
 .campi > button.compatta { justify-self: start; align-self: end; }
+
+/* ---------- Iscrizione ---------- */
+.iscrizione .insegna { background: var(--bottiglia); }
+.iscrizione .insegna h1 { font-size: clamp(2.2rem, 4vw, 3.6rem); }
+.iscrizione .sottotitolo { margin-top: 1rem !important; font-size: 1.15rem; color: #d6e6dd !important; }
+.vantaggi { display: grid; gap: .9rem; margin: .5rem 0 0; padding: 0; list-style: none; }
+.vantaggi li { padding-left: 1.4rem; position: relative; color: #d6e6dd; }
+.vantaggi li::before { content: "✓"; position: absolute; left: 0; color: var(--ocra); font-weight: 700; }
+.vantaggi strong { color: var(--bianco); }
+.iscrizione .avviso { color: #d6e6dd; }
+.piani { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .6rem; }
+.piano { display: grid; gap: .3rem; align-content: start; padding: 1rem; text-align: left; background: var(--bianco); border: 2px solid var(--linea); border-radius: 8px; }
+.piano[aria-checked="true"] { border-color: var(--melograno); box-shadow: 0 0 0 3px var(--rosa-chiaro); }
+.nome-piano { font: 400 1.4rem "Young Serif", Georgia, serif; }
+.prezzo-piano { color: var(--grigio); font-weight: 600; }
+.funzioni-piano { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .88rem; color: var(--grigio); }
+.iscrizione .spunta { margin: 0 0 1rem; }
+.iscrizione .spunta a, .iscrizione .legenda a { color: var(--melograno); }
+.nascosto { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+@media (max-width: 760px) {
+  .iscrizione.pagina { display: block; }
+  .iscrizione .insegna { position: static; height: auto; }
+}
+.iscrizione .campi { align-items: start; }
