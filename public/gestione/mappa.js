@@ -81,7 +81,7 @@ export async function vistaMappa(contenitore) {
         h("span", { class: "legenda conteggio" }, `${stato.tavoli.filter((t) => t.sala_id === s.id).length} tavoli, ${postiTotali()} posti`),
       ),
       pianta,
-      h("p", { class: "legenda" }, "Trascina i tavoli per spostarli. Con un tavolo selezionato puoi usare le frecce della tastiera: tieni premuto Maiusc per spostamenti più ampi."),
+      h("p", { class: "legenda" }, "Trascina i tavoli per spostarli. Con un tavolo selezionato puoi usare le frecce della tastiera (tieni premuto Maiusc per spostamenti più ampi) e il tasto R per ruotarlo di 90°."),
     );
     disegnaProprieta();
   }
@@ -136,6 +136,11 @@ export async function vistaMappa(contenitore) {
         eliminaTavolo(t);
         return;
       }
+      if ((e.key === "r" || e.key === "R") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        ruotaTavolo(t);
+        return;
+      }
       const d = spostamenti[e.key];
       if (!d) return;
       e.preventDefault();
@@ -171,6 +176,28 @@ export async function vistaMappa(contenitore) {
     segnaModificato();
     disegna();
     proprieta.querySelector("input[name=nome]")?.focus();
+  }
+
+  /** Ruota il tavolo di 90° attorno al suo centro: larghezza e profondità si scambiano. */
+  function ruotaTavolo(t) {
+    const s = stato.sale.find((x) => x.id === t.sala_id);
+    if (t.larghezza === t.altezza) {
+      avviso(`Il tavolo ${t.nome} ha i lati uguali: ruotato resta identico.`);
+      return;
+    }
+    if (t.altezza > s.larghezza || t.larghezza > s.altezza) {
+      avviso(`Il tavolo ${t.nome} ruotato non entra nella sala: riduci prima le sue misure.`, "errore");
+      return;
+    }
+    const cx = t.x + t.larghezza / 2;
+    const cy = t.y + t.altezza / 2;
+    [t.larghezza, t.altezza] = [t.altezza, t.larghezza];
+    t.x = limita(aGriglia(cx - t.larghezza / 2), 0, s.larghezza - t.larghezza);
+    t.y = limita(aGriglia(cy - t.altezza / 2), 0, s.altezza - t.altezza);
+    sceltoId = t.id;
+    segnaModificato();
+    disegna();
+    area.querySelector(`.tavolo[data-id="${t.id}"]`)?.focus({ preventScroll: true });
   }
 
   function eliminaTavolo(t) {
@@ -285,6 +312,13 @@ export async function vistaMappa(contenitore) {
           }),
           h("label", { class: "spunta largo" }, online, h("span", {}, "Prenotabile online")),
         ),
+        t.larghezza !== t.altezza
+          ? h(
+              "button",
+              { type: "button", class: "secondario", title: "Scorciatoia: tasto R", onclick: () => ruotaTavolo(t) },
+              t.larghezza > t.altezza ? "Ruota di 90° (in verticale)" : "Ruota di 90° (in orizzontale)",
+            )
+          : null,
         h(
           "p",
           { class: "legenda" },
@@ -297,7 +331,7 @@ export async function vistaMappa(contenitore) {
         h("button", { type: "button", class: "secondario pericolo", onclick: () => eliminaTavolo(t) }, "Elimina tavolo"),
       );
     } else {
-      blocchi.push(h("h2", {}, "Seleziona un tavolo"), h("p", { class: "legenda" }, "Clicca un tavolo sulla pianta per cambiarne nome, posti, forma e dimensioni."));
+      blocchi.push(h("h2", {}, "Seleziona un tavolo"), h("p", { class: "legenda" }, "Clicca un tavolo sulla pianta per cambiarne nome, posti, forma e dimensioni, o per ruotarlo."));
     }
     if (s) {
       const nomeSala = h("input", { value: s.nome, maxlength: 40 });
