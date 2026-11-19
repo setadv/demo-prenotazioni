@@ -11,12 +11,12 @@ const giorniProva = (env) => {
 };
 const aperte = (env) => String(env.ISCRIZIONI ?? "aperte").toLowerCase() !== "chiuse";
 
-/** Dati per la pagina di iscrizione: piani, prova gratuita e link ai termini. */
+/** Dati per la pagina di iscrizione: piani (senza prezzi), prova gratuita e link ai termini. */
 export function infoIscrizione(env) {
   return json({
     aperte: aperte(env),
     giorni_prova: giorniProva(env),
-    piani: Object.fromEntries(Object.entries(PIANI).map(([k, p]) => [k, { nome: p.nome, prezzo: p.prezzo, moduli: p.moduli.map((m) => MODULI[m]) }])),
+    piani: Object.fromEntries(Object.entries(PIANI).map(([k, p]) => [k, { nome: p.nome, moduli: p.moduli.map((m) => MODULI[m]) }])),
     termini: env.LINK_TERMINI || null,
     privacy: env.LINK_PRIVACY || null,
   });

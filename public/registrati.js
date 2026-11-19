@@ -1,5 +1,4 @@
 const $ = (id) => document.getElementById(id);
-const euro = (c) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(c / 100);
 let piano = new URLSearchParams(location.search).get("piano") || "pro";
 
 function el(tag, classe, testo) {
@@ -26,7 +25,7 @@ function disegnaPiani(piani) {
       b.type = "button";
       b.setAttribute("role", "radio");
       b.setAttribute("aria-checked", String(k === piano));
-      b.append(el("span", "nome-piano", p.nome), el("span", "prezzo-piano", `${euro(p.prezzo)} / mese`));
+      b.append(el("span", "nome-piano", p.nome));
       const lista = el("ul", "funzioni-piano");
       for (const f of ["Prenotazioni, menù e QR, CRM, recensioni", ...p.moduli]) lista.append(el("li", null, f));
       b.append(lista);

@@ -1097,6 +1097,7 @@ test("un ristorante si iscrive da solo e parte in prova", async () => {
   const info = await (await chiama("/api/registrati")).json();
   assert.equal(info.aperte, true);
   assert.equal(info.giorni_prova, 14);
+  assert.equal(info.piani.pro.prezzo, undefined, "la pagina di iscrizione non mostra i prezzi");
   assert.ok(info.piani.pro.moduli.length);
   const dati = { nome_locale: "Osteria Nuova", nome: "Lucia Neri", email: "Lucia@Nuova.it", telefono: "333 1234567", password: "password-di-lucia", piano: "pro", consenso: true };
   assert.equal((await chiama("/api/registrati", { method: "POST", headers: { "cf-connecting-ip": "10.80.0.1" }, body: { ...dati, consenso: false } })).status, 400);
