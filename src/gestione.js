@@ -564,8 +564,8 @@ export async function mostraMedia(env, chiave) {
 }
 
 /**
- * Prenotazioni online ancora da confermare (da oggi in avanti), per l'avviso nel pannello:
- * restano segnalate finché il ristorante non le conferma o le annulla.
+ * Prenotazioni online ancora da confermare (da oggi in avanti) e ordini di oggi da evadere, per l'avviso nel pannello:
+ * restano segnalati finché il ristorante non li conferma, li completa o li annulla.
  */
 export async function novita(url, env) {
   const oggi = oraRoma().data;
@@ -579,7 +579,21 @@ export async function novita(url, env) {
       "SELECT COUNT(*) AS n FROM prenotazioni_v2 WHERE ristorante_id = ? AND origine = 'online' AND stato = 'in_attesa' AND data >= ?",
     ).bind(env.RID, oggi),
   ]);
-  return json({ totale: conta.results[0]?.n ?? 0, prenotazioni: elenco.results });
+  // Ordini di asporto e consegna da evadere, solo nel giorno per cui sono stati ordinati.
+  let ordini = { totale: 0, elenco: [] };
+  if (env.MODULI?.has?.("ordini")) {
+    const [righe, quanti] = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT id, codice, tipo, data, ora, nome, totale, stato, creato_il FROM ordini
+         WHERE ristorante_id = ? AND data = ? AND stato IN (${ORDINI_DA_EVADERE})
+         ORDER BY ora, creato_il LIMIT 20`,
+      ).bind(env.RID, oggi),
+      env.DB.prepare(`SELECT COUNT(*) AS n FROM ordini WHERE ristorante_id = ? AND data = ? AND stato IN (${ORDINI_DA_EVADERE})`).bind(env.RID, oggi),
+    ]);
+    ordini = { totale: quanti.results[0]?.n ?? 0, elenco: righe.results };
+  }
+  return json({ totale: conta.results[0]?.n ?? 0, prenotazioni: elenco.results, ordini_totale: ordini.totale, ordini: ordini.elenco });
 }
+const ORDINI_DA_EVADERE = "'nuovo', 'in_preparazione', 'pronto', 'in_consegna'";
 
 export { STATI_ATTIVI, MEDIA };

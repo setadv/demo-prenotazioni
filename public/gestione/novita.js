@@ -11,7 +11,12 @@ let timer = null;
 let attivo = false;
 let ridotto = false;
 let conosciute = new Set();
-let ultime = { totale: 0, prenotazioni: [] };
+const VUOTO = { totale: 0, prenotazioni: [], ordini_totale: 0, ordini: [] };
+let ultime = VUOTO;
+let apriOrdini = () => {};
+const euro = (c) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(c / 100);
+const STATI_ORDINE = { nuovo: "Da accettare", in_preparazione: "In preparazione", pronto: "Pronto", in_consegna: "In consegna" };
+const complessivo = () => ultime.totale + ultime.ordini_totale;
 let suono = null;
 let apriAgenda = () => {};
 
@@ -50,18 +55,19 @@ function suona() {
 
 const quando = (p) => `${testoData(p.data, { weekday: "short", day: "numeric", month: "short" })} alle ${p.ora}`;
 
-function notificaBrowser(nuove, totale) {
+function notificaBrowser(nuove) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const p = nuove[0];
+  const ordine = Boolean(p.tipo);
   try {
-    const n = new Notification(totale === 1 ? "Prenotazione da confermare" : `${totale} prenotazioni da confermare`, {
-      body: `${p.nome} · ${persone(p.persone)} · ${quando(p)}`,
+    const n = new Notification(ordine ? "Nuovo ordine da evadere" : "Prenotazione da confermare", {
+      body: ordine ? `${p.nome} · ${p.tipo === "consegna" ? "Consegna" : "Asporto"} alle ${p.ora} · ${euro(p.totale)}` : `${p.nome} · ${persone(p.persone)} · ${quando(p)}`,
       tag: "nuove-prenotazioni",
       renotify: true,
     });
     n.onclick = () => {
       window.focus();
-      vai();
+      ordine ? vaiOrdini() : vai();
       n.close();
     };
   } catch {
@@ -71,11 +77,28 @@ function notificaBrowser(nuove, totale) {
 
 function aggiornaTitolo() {
   const base = document.title.replace(/^\(\d+\) /, "");
-  document.title = ultime.totale ? `(${ultime.totale}) ${base}` : base;
+  document.title = complessivo() ? `(${complessivo()}) ${base}` : base;
+}
+
+function titoloAvviso() {
+  const parti = [];
+  if (ultime.totale) parti.push(ultime.totale === 1 ? "1 prenotazione da confermare" : `${ultime.totale} prenotazioni da confermare`);
+  if (ultime.ordini_totale) parti.push(ultime.ordini_totale === 1 ? "1 ordine di oggi da evadere" : `${ultime.ordini_totale} ordini di oggi da evadere`);
+  return parti.join(" · ");
+}
+
+function elenco(righe, totale, riga) {
+  const altre = totale - Math.min(righe.length, 3);
+  return h(
+    "ul",
+    { class: "nuove-elenco" },
+    righe.slice(0, 3).map(riga),
+    altre > 0 ? h("li", { class: "nuove-altre" }, altre === 1 ? "e 1 altro" : `e altri ${altre}`) : null,
+  );
 }
 
 function disegna() {
-  const { totale, prenotazioni } = ultime;
+  const totale = complessivo();
   aggiornaTitolo();
   document.body.classList.toggle("con-novita", totale > 0);
   if (!totale) {
@@ -84,7 +107,7 @@ function disegna() {
     return;
   }
   fascia.classList.toggle("ridotta", ridotto);
-  const titolo = totale === 1 ? "1 prenotazione online da confermare" : `${totale} prenotazioni online da confermare`;
+  const titolo = titoloAvviso();
   if (ridotto) {
     fascia.replaceChildren(
       h(
@@ -97,7 +120,6 @@ function disegna() {
     fascia.hidden = false;
     return;
   }
-  const altre = totale - Math.min(prenotazioni.length, 3);
   const permessoDaChiedere = "Notification" in window && Notification.permission === "default";
   fascia.replaceChildren(
     h(
@@ -106,25 +128,34 @@ function disegna() {
       h("span", { class: "campanella", "aria-hidden": "true" }, "🔔"),
       h("strong", {}, titolo),
     ),
-    h(
-      "ul",
-      { class: "nuove-elenco" },
-      prenotazioni.slice(0, 3).map((p) =>
-        h(
-          "li",
-          {},
-          h("b", {}, p.nome),
-          ` · ${persone(p.persone)} · ${quando(p)}`,
-          h("span", { class: "nuove-stato" }, STATI[p.stato] ?? p.stato),
-        ),
-      ),
-      altre > 0 ? h("li", { class: "nuove-altre" }, altre === 1 ? "e 1 altra" : `e altre ${altre}`) : null,
-    ),
-    h("p", { class: "nuove-nota" }, "L'avviso resta finché le prenotazioni non vengono confermate o annullate."),
+    ultime.totale
+      ? [
+          ultime.ordini_totale ? h("p", { class: "nuove-sezione" }, "Prenotazioni online") : null,
+          elenco(ultime.prenotazioni, ultime.totale, (p) =>
+            h("li", {}, h("b", {}, p.nome), ` · ${persone(p.persone)} · ${quando(p)}`, h("span", { class: "nuove-stato" }, STATI[p.stato] ?? p.stato)),
+          ),
+        ]
+      : null,
+    ultime.ordini_totale
+      ? [
+          ultime.totale ? h("p", { class: "nuove-sezione" }, "Ordini di oggi") : null,
+          elenco(ultime.ordini, ultime.ordini_totale, (o) =>
+            h(
+              "li",
+              {},
+              h("b", {}, o.nome),
+              ` · ${o.tipo === "consegna" ? "Consegna" : "Asporto"} alle ${o.ora} · ${euro(o.totale)}`,
+              h("span", { class: "nuove-stato" }, STATI_ORDINE[o.stato] ?? o.stato),
+            ),
+          ),
+        ]
+      : null,
+    h("p", { class: "nuove-nota" }, "L'avviso resta finché le prenotazioni non sono confermate o annullate e gli ordini completati o annullati."),
     h(
       "div",
       { class: "nuove-azioni" },
-      h("button", { type: "button", class: "nuove-apri", onclick: vai }, "Apri in agenda"),
+      ultime.totale ? h("button", { type: "button", class: "nuove-apri", onclick: vai }, "Apri in agenda") : null,
+      ultime.ordini_totale ? h("button", { type: "button", class: "nuove-apri", onclick: vaiOrdini }, "Apri ordini") : null,
       h("button", { type: "button", class: "nuove-visto", onclick: () => ((ridotto = true), disegna()) }, "Riduci"),
       permessoDaChiedere
         ? h(
@@ -142,6 +173,14 @@ function disegna() {
   fascia.hidden = false;
 }
 
+/** Apre gli ordini sul giorno di oggi. */
+function vaiOrdini() {
+  condiviso.data = ultime.ordini[0]?.data ?? condiviso.data;
+  ridotto = true;
+  disegna();
+  apriOrdini();
+}
+
 /** Apre l'agenda sul giorno della prenotazione da confermare arrivata per prima. */
 function vai() {
   const prima = ultime.prenotazioni[ultime.prenotazioni.length - 1];
@@ -155,13 +194,14 @@ async function controlla() {
   if (!attivo) return;
   try {
     const dati = await api("/api/admin/novita");
-    const nuove = dati.prenotazioni.filter((p) => !conosciute.has(p.id));
-    conosciute = new Set(dati.prenotazioni.map((p) => p.id));
-    ultime = { totale: dati.totale, prenotazioni: dati.prenotazioni };
+    ultime = { ...VUOTO, ...dati, ordini: dati.ordini ?? [] };
+    const tutte = [...ultime.prenotazioni, ...ultime.ordini];
+    const nuove = tutte.filter((x) => !conosciute.has(x.id));
+    conosciute = new Set(tutte.map((x) => x.id));
     if (nuove.length) {
-      ridotto = false; // una prenotazione nuova riapre la fascia anche se era ridotta
+      ridotto = false; // una novità riapre la fascia anche se era ridotta
       suona();
-      notificaBrowser(nuove, dati.totale);
+      notificaBrowser(nuove);
     }
     disegna();
   } catch {
@@ -173,11 +213,12 @@ function alRitorno() {
   if (document.visibilityState === "visible") controlla();
 }
 
-/** Da chiamare dopo l'accesso. vaiAgenda apre la vista Agenda sul giorno già impostato. */
-export function avviaNovita(_sessione, vaiAgenda) {
+/** Da chiamare dopo l'accesso. vaiA(vista) apre la vista indicata sul giorno già impostato. */
+export function avviaNovita(_sessione, vaiA) {
   fermaNovita();
   attivo = true;
-  apriAgenda = vaiAgenda;
+  apriAgenda = () => vaiA("agenda");
+  apriOrdini = () => vaiA("ordini");
   controlla();
   timer = setInterval(controlla, OGNI_MS);
   document.addEventListener("visibilitychange", alRitorno);
@@ -190,7 +231,7 @@ export function fermaNovita() {
   attivo = false;
   ridotto = false;
   conosciute = new Set();
-  ultime = { totale: 0, prenotazioni: [] };
+  ultime = VUOTO;
   document.removeEventListener("visibilitychange", alRitorno);
   document.removeEventListener("prenotazioni-cambiate", controlla);
   disegna();
@@ -198,5 +239,5 @@ export function fermaNovita() {
 
 /** Il titolo della scheda cambia a ogni vista: il numero delle prenotazioni da confermare va rimesso davanti. */
 export function titoloConNovita(titolo) {
-  return ultime.totale ? `(${ultime.totale}) ${titolo}` : titolo;
+  return complessivo() ? `(${complessivo()}) ${titolo}` : titolo;
 }

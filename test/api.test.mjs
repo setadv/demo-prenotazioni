@@ -1153,3 +1153,23 @@ test("il pannello segnala le prenotazioni online finché non sono confermate o a
   assert.ok(!confermata.prenotazioni.some((p) => p.id === creata.id));
   assert.equal(confermata.totale, prima.totale);
 });
+
+test("il pannello segnala gli ordini da evadere solo nel giorno dell'ordine", async () => {
+  const oggi = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date());
+  const prima = await (await admin("/api/admin/novita")).json();
+  assert.equal(typeof prima.ordini_totale, "number");
+  assert.ok(Array.isArray(prima.ordini));
+  assert.ok(prima.ordini.every((o) => o.data === oggi && !["completato", "annullato", "in_attesa_pagamento"].includes(o.stato)));
+  const info = await (await chiama("/api/ordini/info")).json();
+  const data = info.giorni.find((g) => g !== oggi);
+  if (!data) return;
+  const fasce = (await (await chiama(`/api/ordini/fasce?data=${data}`)).json()).fasce;
+  const r = await chiama("/api/ordini", {
+    method: "POST",
+    headers: { "cf-connecting-ip": "10.91.0.1" },
+    body: { tipo: "asporto", data, ora: fasce.at(-1).ora, nome: "Futuro Ordine", telefono: "333 9990088", privacy: true, righe: [{ id: "margherita", quantita: 2 }] },
+  });
+  assert.equal(r.status, 201, await r.clone().text());
+  const dopo = await (await admin("/api/admin/novita")).json();
+  assert.equal(dopo.ordini_totale, prima.ordini_totale, "un ordine per un altro giorno non si segnala oggi");
+});

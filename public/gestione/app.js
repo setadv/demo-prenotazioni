@@ -121,9 +121,9 @@ async function avvia() {
   $("ambiente").hidden = sessione.ambiente !== "preview";
   $("ambiente").textContent = "Anteprima: questi dati sono separati dalla produzione.";
   await apriVista();
-  avviaNovita(sessione, () => {
-    if (location.hash === "#agenda") apriVista().catch((e) => avviso(e.message, "errore"));
-    else location.hash = "agenda";
+  avviaNovita(sessione, (vista) => {
+    if (location.hash === `#${vista}`) apriVista().catch((e) => avviso(e.message, "errore"));
+    else location.hash = vista;
   });
 }
 

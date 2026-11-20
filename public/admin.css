@@ -727,3 +727,4 @@ body.con-novita .barra { box-shadow: inset 0 -4px 0 var(--ocra); }
 .nuove-prenotazioni.ridotta { top: auto; bottom: 16px; left: 16px; width: auto; max-width: calc(100vw - 32px); padding: 0; border-width: 2px; border-radius: 999px; transform: none; animation: nuove-pulsa 1.6s ease-in-out infinite; }
 .nuove-espandi { display: flex; align-items: center; gap: .4rem; padding: .45rem 1rem; font: inherit; font-weight: 600; color: var(--bianco); background: transparent; border: 0; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .nuove-prenotazioni.ridotta .campanella { font-size: 1.15rem; }
+.nuove-sezione { margin: .6rem 0 -.3rem; font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
