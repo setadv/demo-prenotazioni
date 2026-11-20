@@ -121,7 +121,8 @@ function disegna() {
     return;
   }
   const permessoDaChiedere = "Notification" in window && Notification.permission === "default";
-  fascia.replaceChildren(
+  // replaceChildren non appiattisce gli array: i gruppi vanno distesi, senza i vuoti.
+  const parti = [
     h(
       "div",
       { class: "nuove-testa" },
@@ -169,7 +170,8 @@ function disegna() {
           )
         : null,
     ),
-  );
+  ];
+  fascia.replaceChildren(...parti.flat(Infinity).filter(Boolean));
   fascia.hidden = false;
 }
 
