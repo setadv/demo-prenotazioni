@@ -1173,3 +1173,21 @@ test("il pannello segnala gli ordini da evadere solo nel giorno dell'ordine", as
   const dopo = await (await admin("/api/admin/novita")).json();
   assert.equal(dopo.ordini_totale, prima.ordini_totale, "un ordine per un altro giorno non si segnala oggi");
 });
+
+test("la richiesta di recensione aspetta le ore dopo l'arrivo, anche con il sondaggio attivo", async () => {
+  const conf = await (await admin("/api/admin/configurazione")).json();
+  assert.equal(conf.impostazioni.recensione_dopo_arrivo_ore, 3);
+  const domani = sposta(oggiRoma(), 1);
+  const r = await admin("/api/admin/prenotazioni", {
+    method: "POST",
+    body: { data: domani, ora: "20:00", persone: 2, origine: "walk_in", nome: "Appena Arrivato", telefono: "333 7770099", email: "arrivato@esempio.it", canale: "email" },
+  });
+  assert.equal(r.status, 201, await r.clone().text());
+  const { id } = await r.json();
+  await admin(`/api/admin/agenda?data=${domani}`);
+  await new Promise((f) => setTimeout(f, 800));
+  assert.ok(!inviati.some((v) => v.json?.to?.[0] === "arrivato@esempio.it"), "appena arrivato: nessuna richiesta ancora");
+  const riga = (await (await admin(`/api/admin/agenda?data=${domani}`)).json()).prenotazioni.find((p) => p.id === id);
+  assert.equal(riga.notifica_recensione, null);
+  assert.match(riga.messaggio_recensione, /g\.page/, "il testo per l'invio a mano è già pronto");
+});

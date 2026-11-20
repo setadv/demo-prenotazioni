@@ -73,15 +73,16 @@ const NOMI_CANALE = { email: "email", sms: "SMS", whatsapp: "WhatsApp" };
 
 const TIPI_MESSAGGIO = {
   conferma: { nome: "Conferma", oggetto: "Prenotazione confermata" },
-  recensione: { nome: "Richiesta di recensione", oggetto: "Com'è andata?" },
+  recensione: { nome: "Richiesta di recensione", oggetto: "Com'è andata?", invito: "Chiedi la recensione:" },
+  sondaggio: { nome: "Sondaggio dopo la visita", oggetto: "Com'è andata?", invito: "Manda il sondaggio:" },
 };
 
-/** Stato del messaggio (conferma o recensione) e pulsanti per inviarlo a mano con il testo già pronto. */
+/** Stato del messaggio (conferma, recensione o sondaggio) e pulsanti per inviarlo a mano con il testo già pronto. */
 function bloccoMessaggio(p, tipo, ricarica) {
-  const testoPronto = tipo === "recensione" ? p.messaggio_recensione : p.messaggio;
-  const n = tipo === "recensione" ? p.notifica_recensione : p.notifica;
+  const testoPronto = tipo === "conferma" ? p.messaggio : p[`messaggio_${tipo}`];
+  const n = tipo === "conferma" ? p.notifica : p[`notifica_${tipo}`];
   if (!testoPronto && !n) return null;
-  const nome = tipo === "recensione" && p.tipo_dopo_visita === "sondaggio" ? "Sondaggio dopo la visita" : TIPI_MESSAGGIO[tipo].nome;
+  const nome = TIPI_MESSAGGIO[tipo].nome;
   let stato = null;
   if (n?.esito === "inviata") stato = h("span", { class: "invio ok" }, `${nome} inviata via ${NOMI_CANALE[n.canale]}`);
   else if (n?.esito === "manuale") stato = h("span", { class: "invio ok" }, `${nome} inviata a mano via ${NOMI_CANALE[n.canale]}`);
@@ -90,7 +91,7 @@ function bloccoMessaggio(p, tipo, ricarica) {
     stato = h("span", { class: "invio attesa" }, `${nome} da inviare, preferisce ${NOMI_CANALE[p.canale] ?? "email"}`);
   }
   const giaInviata = n && ["inviata", "manuale"].includes(n.esito);
-  if (!testoPronto || (tipo === "recensione" && giaInviata)) return h("p", { class: "messaggi" }, stato);
+  if (!testoPronto || (tipo !== "conferma" && giaInviata)) return h("p", { class: "messaggi" }, stato);
 
   const segna = (canale) => async () => {
     try {
@@ -118,7 +119,7 @@ function bloccoMessaggio(p, tipo, ricarica) {
       }, "Email"),
     );
   }
-  return h("div", { class: "messaggi" }, stato, link.length ? h("span", { class: "legenda" }, tipo === "conferma" ? "Invia:" : p.tipo_dopo_visita === "sondaggio" ? "Manda il sondaggio:" : "Chiedi la recensione:") : null, link);
+  return h("div", { class: "messaggi" }, stato, link.length ? h("span", { class: "legenda" }, tipo === "conferma" ? "Invia:" : TIPI_MESSAGGIO[tipo].invito) : null, link);
 }
 
 const LINGUE_CLIENTE = { en: "Parla inglese", de: "Parla tedesco", fr: "Parla francese", es: "Parla spagnolo" };
@@ -200,6 +201,7 @@ function rigaPrenotazione(p, dati, ricarica) {
       p.note_cliente ? h("p", { class: "nota" }, `Note sul cliente: ${p.note_cliente}`) : null,
       bloccoMessaggio(p, "conferma", ricarica),
       bloccoMessaggio(p, "recensione", ricarica),
+      bloccoMessaggio(p, "sondaggio", ricarica),
     ),
     h("div", { class: "gestione-riga" }, h("label", { class: "piccola" }, "Tavolo", tavolo), h("div", { class: "azioni" }, azioni)),
   );

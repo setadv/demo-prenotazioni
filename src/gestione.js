@@ -8,7 +8,8 @@ import {
   componiMessaggio,
   elaboraRecensioni,
   inviaConferma,
-  messaggioDopoVisita,
+  messaggioRecensione as testoRecensione,
+  messaggioSondaggio,
   linkPrenotazione,
   registraInvioManuale,
 } from "./notifiche.js";
@@ -68,7 +69,9 @@ export async function agenda(url, env, ctx) {
          (SELECT n.esito || '|' || n.canale || '|' || n.dettaglio FROM notifiche n
            WHERE n.prenotazione_id = p.id AND n.tipo = 'conferma' ORDER BY n.id DESC LIMIT 1) AS notifica,
          (SELECT n.esito || '|' || n.canale || '|' || n.dettaglio FROM notifiche n
-           WHERE n.prenotazione_id = p.id AND n.tipo = 'recensione' ORDER BY n.id DESC LIMIT 1) AS notifica_recensione
+           WHERE n.prenotazione_id = p.id AND n.tipo = 'recensione' ORDER BY n.id DESC LIMIT 1) AS notifica_recensione,
+         (SELECT n.esito || '|' || n.canale || '|' || n.dettaglio FROM notifiche n
+           WHERE n.prenotazione_id = p.id AND n.tipo = 'sondaggio' ORDER BY n.id DESC LIMIT 1) AS notifica_sondaggio
        FROM prenotazioni_v2 p
        LEFT JOIN tavoli t ON t.id = p.tavolo_id
        LEFT JOIN clienti c ON c.id = p.cliente_id
@@ -86,18 +89,21 @@ export async function agenda(url, env, ctx) {
     prenotazioni.results.map(async (p) => {
       const contattabile = Boolean(p.telefono || p.email);
       const conMessaggio = p.stato === "confermata" && contattabile;
-      const dopoVisita = p.stato === "arrivata" && contattabile ? await messaggioDopoVisita(env, imp, p, url.origin) : null;
+      const arrivata = p.stato === "arrivata" && contattabile;
+      const sondaggio = arrivata ? await messaggioSondaggio(env, imp, p, url.origin) : null;
+      const recensione = arrivata ? testoRecensione(imp, p) : null;
       return {
         ...p,
         etichette: p.etichette ? p.etichette.split(",") : [],
         notifica: separa(p.notifica),
         notifica_recensione: separa(p.notifica_recensione),
+        notifica_sondaggio: separa(p.notifica_sondaggio),
         messaggio: conMessaggio
           ? componiMessaggio("conferma", imp, p, { link: await linkPrenotazione(env, url.origin, p.id, p.lingua) })
           : null,
         fidelity: Boolean(p.fidelity),
-        messaggio_recensione: dopoVisita?.testo ?? null,
-        tipo_dopo_visita: dopoVisita?.tipo ?? null,
+        messaggio_recensione: recensione?.testo ?? null,
+        messaggio_sondaggio: sondaggio?.testo ?? null,
       };
     }),
   );
@@ -203,7 +209,8 @@ export async function modificaPrenotazione(request, env, id, ctx) {
   const noteInterne = "note_interne" in corpo ? testo(corpo.note_interne, 500, { campo: "Le note interne" }) : attuale.note_interne;
 
   const esito = await env.DB.prepare(
-    `UPDATE prenotazioni_v2 AS p SET stato = ?2, tavolo_id = ?3, note_interne = ?4, aggiornata_il = ?5
+    `UPDATE prenotazioni_v2 AS p SET stato = ?2, tavolo_id = ?3, note_interne = ?4, aggiornata_il = ?5,
+       arrivata_il = CASE WHEN ?2 <> 'arrivata' THEN NULL WHEN p.stato = 'arrivata' THEN p.arrivata_il ELSE ?5 END
      WHERE p.id = ?1 AND (?3 IS NULL OR ?2 NOT IN ${SQL_ATTIVI} OR NOT EXISTS (
        SELECT 1 FROM prenotazioni_v2 o
        WHERE o.id <> p.id AND o.tavolo_id = ?3 AND o.data = p.data AND o.stato IN ${SQL_ATTIVI}
@@ -394,7 +401,8 @@ export async function salvaConfigurazione(request, env) {
     messaggio_conferma: testo(i.messaggio_conferma, 600, { min: 20, campo: "Il messaggio di conferma" }),
     link_recensioni: linkRecensioni(i.link_recensioni),
     recensioni_automatiche: i.recensioni_automatiche ? 1 : 0,
-    recensione_dopo_ore: intero(i.recensione_dopo_ore ?? 2, 1, 72, "Ore dopo la visita"),
+    recensione_dopo_ore: intero(i.recensione_dopo_ore ?? 2, 1, 72, "Ore dopo la fine del pasto"),
+    recensione_dopo_arrivo_ore: intero(i.recensione_dopo_arrivo_ore ?? 3, 1, 72, "Ore dopo l'arrivo"),
     messaggio_recensione: messaggioRecensione(i.messaggio_recensione, "in italiano"),
   };
   for (const l of ALTRE_LINGUE) {

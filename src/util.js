@@ -165,6 +165,7 @@ const NUMERICHE = new Set([
   "conferma_automatica",
   "recensioni_automatiche",
   "recensione_dopo_ore",
+  "recensione_dopo_arrivo_ore",
   "fidelity_attiva",
   "punti_visita",
   "punti_euro",

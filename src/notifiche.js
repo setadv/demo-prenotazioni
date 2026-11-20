@@ -3,7 +3,7 @@ import { LOCALI, dataIn, linguaValida, modelloIn, oggettoEmail, personeIn } from
 import { base64url, giorniDa, hmac, leggiImpostazioni, oraRoma, sha256, spostaData, uguali } from "./util.js";
 
 export const CANALI = ["email", "sms", "whatsapp"];
-export const TIPI = ["conferma", "recensione", "premio", "ordine", "gift"];
+export const TIPI = ["conferma", "recensione", "sondaggio", "premio", "ordine", "gift"];
 
 /** Token per i link personali (prenotazione, sondaggio, ordine, buono): si ricava dall'id, non va salvato. */
 export async function tokenPer(env, prefisso, id) {
@@ -262,22 +262,36 @@ export function origineSito(env, imp) {
   return env.SITO_URL?.replace(/\/$/, "") || imp.url_sito || null;
 }
 
-/**
- * Messaggio dopo la visita: il sondaggio se attivo, altrimenti la richiesta di recensione.
- * Al termine del sondaggio il link per la recensione compare a tutti, qualunque voto abbiano dato.
- */
-export async function messaggioDopoVisita(env, imp, p, origine) {
-  if (imp.sondaggio_attivo && origine) {
-    const l = p.lingua && p.lingua !== "it" ? `&l=${p.lingua}` : "";
-    const sondaggio = linkPubblico(env, "/sondaggio", { origine, frammento: `id=${p.id}&t=${await tokenPer(env, "sondaggio", p.id)}${l}` });
-    return { tipo: "sondaggio", extra: { sondaggio }, testo: componiMessaggio("sondaggio", imp, p, { sondaggio }) };
-  }
-  if (imp.link_recensioni) return { tipo: "recensione", extra: {}, testo: componiMessaggio("recensione", imp, p) };
-  return null;
+/** Sondaggio dopo la visita (se attivo): a fine sondaggio il link per la recensione compare a tutti, qualunque voto abbiano dato. */
+export async function messaggioSondaggio(env, imp, p, origine) {
+  if (!imp.sondaggio_attivo || !origine) return null;
+  const l = p.lingua && p.lingua !== "it" ? `&l=${p.lingua}` : "";
+  const sondaggio = linkPubblico(env, "/sondaggio", { origine, frammento: `id=${p.id}&t=${await tokenPer(env, "sondaggio", p.id)}${l}` });
+  return { tipo: "sondaggio", extra: { sondaggio }, testo: componiMessaggio("sondaggio", imp, p, { sondaggio }) };
+}
+
+/** Richiesta di recensione: parte solo se il ristorante ha inserito il link per le recensioni. */
+export function messaggioRecensione(imp, p) {
+  if (!imp.link_recensioni) return null;
+  return { tipo: "recensione", extra: {}, testo: componiMessaggio("recensione", imp, p) };
+}
+
+/** Prenota l'invio in un'unica istruzione: due esecuzioni contemporanee non mandano due messaggi. */
+async function prenotaInvio(env, p, registro) {
+  const presa = await env.DB.prepare(
+    `INSERT INTO notifiche (prenotazione_id, canale, esito, dettaglio, creata_il, tipo, ristorante_id)
+     SELECT ?1, ?2, 'da_inviare', 'In preparazione', ?3, ?5, ?4
+     WHERE NOT EXISTS (SELECT 1 FROM notifiche WHERE prenotazione_id = ?1 AND tipo = ?5)`,
+  )
+    .bind(p.id, p.canale, new Date().toISOString(), env.RID, registro)
+    .run();
+  return Boolean(presa.meta.changes);
 }
 
 /**
- * Manda il messaggio dopo la visita ai clienti arrivati, qualche ora dopo la fine del pasto e una sola volta.
+ * Messaggi dopo la visita ai clienti arrivati, una sola volta ciascuno:
+ * - la richiesta di recensione, N ore dopo che il cliente è stato segnato Arrivato (predefinito 3);
+ * - il sondaggio, se attivo, N ore dopo la fine del pasto.
  * Gira ogni 15 minuti (Cron Trigger) e quando il gestore apre l'agenda.
  * Tutti ricevono lo stesso link: Google vieta di filtrare chi è invitato a recensire.
  */
@@ -285,32 +299,35 @@ export async function elaboraRecensioni(env, origineRichiesta = null) {
   try {
     const imp = await leggiImpostazioni(env);
     const origine = origineRichiesta ?? origineSito(env, imp);
-    if (!imp.recensioni_automatiche || !(imp.link_recensioni || (imp.sondaggio_attivo && origine))) return 0;
+    const recensione = Boolean(imp.link_recensioni);
+    const sondaggio = Boolean(imp.sondaggio_attivo && origine);
+    if (!imp.recensioni_automatiche || !(recensione || sondaggio)) return 0;
     const adesso = oraRoma();
     const { results } = await env.DB.prepare(
-      `SELECT p.id, p.codice, p.data, p.ora, p.inizio_min, p.durata, p.persone, p.nome, p.telefono, p.email, p.canale, p.lingua
+      `SELECT p.id, p.codice, p.data, p.ora, p.inizio_min, p.durata, p.persone, p.nome, p.telefono, p.email, p.canale, p.lingua, p.arrivata_il,
+         EXISTS (SELECT 1 FROM notifiche n WHERE n.prenotazione_id = p.id AND n.tipo = 'recensione') AS ha_recensione,
+         EXISTS (SELECT 1 FROM notifiche n WHERE n.prenotazione_id = p.id AND n.tipo = 'sondaggio') AS ha_sondaggio
        FROM prenotazioni_v2 p
        WHERE p.ristorante_id = ? AND p.stato = 'arrivata' AND p.data BETWEEN ? AND ? AND (p.telefono <> '' OR p.email <> '')
-         AND NOT EXISTS (SELECT 1 FROM notifiche n WHERE n.prenotazione_id = p.id AND n.tipo = 'recensione')
-       ORDER BY p.data, p.inizio_min LIMIT 25`,
+       ORDER BY p.data, p.inizio_min LIMIT 50`,
     )
       .bind(env.RID, spostaData(adesso.data, -2), adesso.data)
       .all();
     let inviate = 0;
     for (const p of results) {
-      const trascorsi = giorniDa(p.data, adesso.data) * 1440 + adesso.minuti - (p.inizio_min + p.durata);
-      if (trascorsi < imp.recensione_dopo_ore * 60) continue;
-      // Prenota l'invio in un'unica istruzione: due esecuzioni contemporanee non mandano due messaggi.
-      const presa = await env.DB.prepare(
-        `INSERT INTO notifiche (prenotazione_id, canale, esito, dettaglio, creata_il, tipo, ristorante_id)
-         SELECT ?1, ?2, 'da_inviare', 'In preparazione', ?3, 'recensione', ?4
-         WHERE NOT EXISTS (SELECT 1 FROM notifiche WHERE prenotazione_id = ?1 AND tipo = 'recensione')`,
-      )
-        .bind(p.id, p.canale, new Date().toISOString(), env.RID)
-        .run();
-      if (!presa.meta.changes) continue;
-      const m = await messaggioDopoVisita(env, imp, p, origine);
-      if (m && (await invia(env, imp, p, m.tipo, m.extra, "recensione"))) inviate += 1;
+      const dallaFine = giorniDa(p.data, adesso.data) * 1440 + adesso.minuti - (p.inizio_min + p.durata);
+      // Se l'arrivo è stato segnato dopo la fine del pasto (registrazione a posteriori), si conta dalla fine del pasto.
+      const dallArrivo = p.arrivata_il ? Math.max((Date.now() - Date.parse(p.arrivata_il)) / 60000, dallaFine) : dallaFine;
+      if (recensione && !p.ha_recensione && dallArrivo >= imp.recensione_dopo_arrivo_ore * 60 && (await prenotaInvio(env, p, "recensione"))) {
+        const m = messaggioRecensione(imp, p);
+        if (await invia(env, imp, p, m.tipo, m.extra, "recensione")) inviate += 1;
+      }
+      // Le visite segnate prima di questa versione (senza ora di arrivo) avevano un solo messaggio: non se ne manda un secondo.
+      const vecchia = !p.arrivata_il && p.ha_recensione;
+      if (sondaggio && !p.ha_sondaggio && !vecchia && dallaFine >= imp.recensione_dopo_ore * 60 && (await prenotaInvio(env, p, "sondaggio"))) {
+        const m = await messaggioSondaggio(env, imp, p, origine);
+        if (await invia(env, imp, p, m.tipo, m.extra, "sondaggio")) inviate += 1;
+      }
     }
     return inviate;
   } catch (e) {

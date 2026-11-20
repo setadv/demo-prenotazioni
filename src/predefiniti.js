@@ -77,6 +77,7 @@ export const PREDEFINITE = {
   punti_euro: "1",
   punti_visita: "10",
   recensione_dopo_ore: "2",
+  recensione_dopo_arrivo_ore: "3",
   recensioni_automatiche: "1",
   sondaggio_attivo: "0",
   telefono: "",

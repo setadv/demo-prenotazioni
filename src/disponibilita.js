@@ -95,8 +95,8 @@ export async function calcolaDisponibilita(env, data, persone, imp, lingua = "it
 
 const INSERISCI = `
 INSERT INTO prenotazioni_v2 (id, codice, token_hash, data, ora, inizio_min, durata, persone, nome, telefono,
-  email, occasione, note, stato, origine, tavolo_id, cliente_id, sconto, creata_il, aggiornata_il, canale, lingua, ristorante_id)
-SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20, ?21, ?22
+  email, occasione, note, stato, origine, tavolo_id, cliente_id, sconto, creata_il, aggiornata_il, canale, lingua, ristorante_id, arrivata_il)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19, ?20, ?21, ?22, CASE WHEN ?14 = 'arrivata' THEN ?19 END
 WHERE ?16 IS NULL OR NOT EXISTS (
   SELECT 1 FROM prenotazioni_v2 p
   WHERE p.tavolo_id = ?16 AND p.data = ?4 AND p.stato IN ${SQL_ATTIVI}

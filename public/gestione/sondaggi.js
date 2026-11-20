@@ -108,7 +108,7 @@ export async function vistaSondaggi(contenitore) {
     h(
       "p",
       { class: "legenda" },
-      "Qualche ora dopo la visita il cliente riceve un solo messaggio con il sondaggio. Alla fine, a tutti compare anche il link per la recensione: le regole di Google non permettono di mostrarlo solo a chi è soddisfatto.",
+      "Qualche ora dopo la fine del pasto il cliente riceve il sondaggio, in aggiunta alla richiesta di recensione (Impostazioni › Ristorante e orari). Alla fine del sondaggio a tutti compare anche il link per la recensione: le regole di Google non permettono di mostrarlo solo a chi è soddisfatto.",
     ),
     filtri,
     corpo,
@@ -118,7 +118,7 @@ export async function vistaSondaggi(contenitore) {
       impostazioni: moduli.impostazioni,
       onSalvato: carica,
       campi: [
-        { chiave: "sondaggio_attivo", tipo: "spunta", etichetta: "Dopo la visita manda il sondaggio al posto della sola richiesta di recensione" },
+        { chiave: "sondaggio_attivo", tipo: "spunta", etichetta: "Dopo la visita manda anche il sondaggio" },
         { chiave: "messaggio_sondaggio", tipo: "tradotto", etichetta: "Messaggio con il sondaggio", aiuto: "Puoi usare: {nome}, {ristorante}, {data}, {sondaggio}. {sondaggio} è il link e deve restare nel testo. Orario di invio e invio automatico si regolano in Impostazioni, Messaggio dopo la visita." },
       ],
     }),

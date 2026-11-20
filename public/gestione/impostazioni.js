@@ -237,11 +237,11 @@ export async function vistaImpostazioni(contenitore) {
     return h(
       "section",
       { class: "blocco" },
-      h("h2", {}, "Messaggio dopo la visita"),
+      h("h2", {}, "Messaggi dopo la visita"),
       h(
         "p",
         { class: "legenda" },
-        "Qualche ora dopo la visita il cliente riceve un solo messaggio: il sondaggio se è attivo (sezione Sondaggi), altrimenti la richiesta di recensione. Parte per le prenotazioni segnate come Arrivati, sul canale scelto dal cliente; chi ha scelto WhatsApp senza invio automatico compare in agenda con il pulsante per mandarlo a mano.",
+        "Ai clienti segnati come Arrivati partono due messaggi, una volta sola: la richiesta di recensione qualche ora dopo l'arrivo (se hai inserito il link qui sotto) e, se è attivo nella sezione Sondaggi, il sondaggio dopo la fine del pasto. Partono sul canale scelto dal cliente; chi ha scelto WhatsApp senza invio automatico compare in agenda con il pulsante per mandarli a mano.",
       ),
       h(
         "div",
@@ -252,9 +252,10 @@ export async function vistaImpostazioni(contenitore) {
           "label",
           { class: "spunta largo" },
           h("input", { type: "checkbox", name: "recensioni_automatiche", checked: Boolean(i.recensioni_automatiche) }),
-          h("span", {}, "Invia il messaggio in automatico. Se disattivato, lo mandi tu dall'agenda con un clic."),
+          h("span", {}, "Invia i messaggi in automatico. Se disattivato, li mandi tu dall'agenda con un clic."),
         ),
-        campo("Ore dopo la fine del pasto", "recensione_dopo_ore", i.recensione_dopo_ore, { type: "number", min: 1, max: 72 }, "La fine del pasto è l'orario più la durata del tavolo."),
+        campo("Recensione: ore dopo l'arrivo", "recensione_dopo_arrivo_ore", i.recensione_dopo_arrivo_ore ?? 3, { type: "number", min: 1, max: 72 }, "Si contano da quando segni il cliente come Arrivato."),
+        campo("Sondaggio: ore dopo la fine del pasto", "recensione_dopo_ore", i.recensione_dopo_ore, { type: "number", min: 1, max: 72 }, "La fine del pasto è l'orario più la durata del tavolo. Vale solo se il sondaggio è attivo."),
         h(
           "label",
           { class: "largo" },
@@ -423,6 +424,7 @@ export async function vistaImpostazioni(contenitore) {
         link_recensioni: f.get("link_recensioni"),
         recensioni_automatiche: f.get("recensioni_automatiche") === "on",
         recensione_dopo_ore: Number(f.get("recensione_dopo_ore")),
+        recensione_dopo_arrivo_ore: Number(f.get("recensione_dopo_arrivo_ore")),
         messaggio_recensione: f.get("messaggio_recensione"),
         ...Object.fromEntries(
           Object.keys(LINGUE).flatMap((l) => ["descrizione", "messaggio_conferma", "messaggio_recensione"].map((k) => [`${k}_${l}`, f.get(`${k}_${l}`) ?? ""])),
