@@ -191,7 +191,7 @@ export async function vistaOrdini(contenitore) {
   });
 
   contenitore.append(
-    h("div", { class: "testata-vista" }, h("h1", {}, "Ordini"), h("div", { class: "pulsanti-testata" }, h("a", { class: "secondario pulsante-link", href: paginaPubblica("/ordina"), target: "_blank", rel: "noopener" }, "Apri la pagina degli ordini"))),
+    h("div", { class: "testata-vista" }, h("h1", {}, "Ordini"), h("div", { class: "pulsanti-testata" }, h("a", { class: "secondario pulsante-link", href: paginaPubblica("/ordina"), target: "_blank", rel: "noopener" }, "Pagina ordini per i clienti"))),
     h("p", { class: "legenda" }, "Asporto e consegna dal tuo sito, senza commissioni di piattaforma. I piatti ordinabili si scelgono nel Menù. Questa pagina si aggiorna da sola ogni 30 secondi."),
     h("div", { class: "strumenti" }, campoData(carica)),
     riepilogo,
