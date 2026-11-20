@@ -6,6 +6,7 @@ import { api, condiviso, h, persone, STATI, testoData } from "./comune.js";
  * Il pannello chiede le novità ogni 20 secondi; restano in evidenza finché qualcuno clicca "Ho visto".
  */
 const OGNI_MS = 20000;
+const PRIMO_AVVIO_MS = 12 * 3600000;
 let timer = null;
 let chiave = null;
 let visto = null; // momento (ISO) fino al quale le prenotazioni sono già state viste
@@ -160,8 +161,9 @@ async function controlla() {
   try {
     const dati = await api(`/api/admin/novita${visto ? `?dopo=${encodeURIComponent(visto)}` : ""}`);
     if (!visto) {
-      salvaVisto(dati.adesso);
-      return;
+      // Primo avvio su questo browser: mostra le prenotazioni online delle ultime 12 ore.
+      salvaVisto(new Date(Date.parse(dati.adesso) - PRIMO_AVVIO_MS).toISOString());
+      return controlla();
     }
     const nuove = dati.prenotazioni.filter((p) => !conosciute.has(p.id));
     dati.prenotazioni.forEach((p) => conosciute.add(p.id));
