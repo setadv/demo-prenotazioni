@@ -43,6 +43,7 @@ export async function api(percorso, { metodo = "GET", corpo, grezzo = false } = 
     document.dispatchEvent(new CustomEvent("sessione-scaduta"));
   }
   if (!r.ok) throw new ErroreApi(dati.errore || "Operazione non riuscita. Riprova.", r.status);
+  if (metodo !== "GET" && percorso.startsWith("/api/admin/prenotazioni")) document.dispatchEvent(new CustomEvent("prenotazioni-cambiate"));
   return dati;
 }
 

@@ -1137,16 +1137,19 @@ test("dopo il logout il cookie viene cancellato", async () => {
   assert.match(r.headers.get("set-cookie"), /Max-Age=0/);
 });
 
-test("il pannello riceve le nuove prenotazioni online da segnalare", async () => {
+test("il pannello segnala le prenotazioni online finché non sono confermate o annullate", async () => {
   assert.equal((await chiama("/api/admin/novita")).status, 401);
-  const inizio = await (await admin("/api/admin/novita")).json();
-  assert.match(inizio.adesso, /^\d{4}-\d{2}-\d{2}T/);
-  assert.equal(inizio.totale, 0);
+  const prima = await (await admin("/api/admin/novita")).json();
   const r = await prenota({ ora: "21:00", nome: "Nuova Online", telefono: "333 0000777" }, "10.90.0.1");
   assert.equal(r.status, 201, await r.clone().text());
-  const dopo = await (await admin(`/api/admin/novita?dopo=${encodeURIComponent(inizio.adesso)}`)).json();
-  assert.equal(dopo.totale, 1);
-  assert.equal(dopo.prenotazioni[0].nome, "Nuova Online");
-  const vista = await (await admin(`/api/admin/novita?dopo=${encodeURIComponent(dopo.prenotazioni[0].creata_il)}`)).json();
-  assert.equal(vista.totale, 0);
+  const creata = await r.json();
+  const stato = (body) => admin(`/api/admin/prenotazioni/${creata.id}`, { method: "PATCH", body });
+  if (creata.stato !== "in_attesa") assert.equal((await stato({ stato: "in_attesa" })).status, 200);
+  const dopo = await (await admin("/api/admin/novita")).json();
+  assert.equal(dopo.totale, prima.totale + 1);
+  assert.ok(dopo.prenotazioni.some((p) => p.id === creata.id && p.nome === "Nuova Online"));
+  assert.equal((await stato({ stato: "confermata" })).status, 200);
+  const confermata = await (await admin("/api/admin/novita")).json();
+  assert.ok(!confermata.prenotazioni.some((p) => p.id === creata.id));
+  assert.equal(confermata.totale, prima.totale);
 });

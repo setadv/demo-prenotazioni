@@ -564,24 +564,22 @@ export async function mostraMedia(env, chiave) {
 }
 
 /**
- * Prenotazioni online arrivate dopo un certo momento (non annullate), per l'avviso nel pannello.
- * Senza "dopo" restituisce solo l'ora del server, che il pannello usa come punto di partenza.
+ * Prenotazioni online ancora da confermare (da oggi in avanti), per l'avviso nel pannello:
+ * restano segnalate finché il ristorante non le conferma o le annulla.
  */
 export async function novita(url, env) {
-  const adesso = new Date().toISOString();
-  const dopo = url.searchParams.get("dopo") ?? "";
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(dopo)) return json({ adesso, totale: 0, prenotazioni: [] });
+  const oggi = oraRoma().data;
   const [elenco, conta] = await env.DB.batch([
     env.DB.prepare(
       `SELECT id, codice, data, ora, persone, nome, stato, creata_il FROM prenotazioni_v2
-       WHERE ristorante_id = ? AND origine = 'online' AND stato <> 'annullata' AND creata_il > ?
+       WHERE ristorante_id = ? AND origine = 'online' AND stato = 'in_attesa' AND data >= ?
        ORDER BY creata_il DESC LIMIT 20`,
-    ).bind(env.RID, dopo),
+    ).bind(env.RID, oggi),
     env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM prenotazioni_v2 WHERE ristorante_id = ? AND origine = 'online' AND stato <> 'annullata' AND creata_il > ?",
-    ).bind(env.RID, dopo),
+      "SELECT COUNT(*) AS n FROM prenotazioni_v2 WHERE ristorante_id = ? AND origine = 'online' AND stato = 'in_attesa' AND data >= ?",
+    ).bind(env.RID, oggi),
   ]);
-  return json({ adesso, totale: conta.results[0]?.n ?? 0, prenotazioni: elenco.results });
+  return json({ totale: conta.results[0]?.n ?? 0, prenotazioni: elenco.results });
 }
 
 export { STATI_ATTIVI, MEDIA };
