@@ -10,6 +10,7 @@ import { vistaMenu } from "./menu.js";
 import { vistaOrdini } from "./ordini.js";
 import { vistaFidelity } from "./fidelity.js";
 import { vistaSondaggi } from "./sondaggi.js";
+import { avviaNovita, fermaNovita, titoloConNovita } from "./novita.js";
 
 const VISTE = {
   agenda: vistaAgenda,
@@ -100,7 +101,7 @@ async function apriVista() {
     if (a.dataset.vista === nome) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   });
-  document.title = `${TITOLI[nome]}, ${sessione?.nome ?? "pannello"}`;
+  document.title = titoloConNovita(`${TITOLI[nome]}, ${sessione?.nome ?? "pannello"}`);
   const contenuto = $("contenuto");
   contenuto.replaceChildren();
   vistaCorrente = { nome, ...(await VISTE[nome](contenuto, sessione)) };
@@ -120,6 +121,10 @@ async function avvia() {
   $("ambiente").hidden = sessione.ambiente !== "preview";
   $("ambiente").textContent = "Anteprima: questi dati sono separati dalla produzione.";
   await apriVista();
+  avviaNovita(sessione, () => {
+    if (location.hash === "#agenda") apriVista().catch((e) => avviso(e.message, "errore"));
+    else location.hash = "agenda";
+  });
 }
 
 window.addEventListener("hashchange", () => {
@@ -127,6 +132,7 @@ window.addEventListener("hashchange", () => {
 });
 
 document.addEventListener("sessione-scaduta", () => {
+  fermaNovita();
   sessione = null;
   mostraAccesso();
 });
@@ -147,6 +153,7 @@ $("login").addEventListener("submit", async (evento) => {
 });
 
 $("esci").addEventListener("click", async () => {
+  fermaNovita();
   await api("/api/admin/logout", { metodo: "POST" }).catch(() => {});
   sessione = null;
   corrente.sessione = null;

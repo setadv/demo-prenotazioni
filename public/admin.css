@@ -684,3 +684,42 @@ input.largo { width: 100%; }
   .iscrizione .insegna { position: static; height: auto; }
 }
 .iscrizione .campi { align-items: start; }
+
+/* Avviso delle nuove prenotazioni online: fascia fissa in alto, ben visibile da lontano. */
+.nuove-prenotazioni {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  z-index: 60;
+  width: min(640px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  padding: 1rem 1.25rem 1.1rem;
+  color: var(--bianco);
+  background: var(--melograno);
+  border: 3px solid var(--ocra);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(94, 13, 37, .45);
+  animation: nuove-entra .35s ease-out, nuove-pulsa 1.6s ease-in-out .35s infinite;
+}
+.nuove-prenotazioni[hidden] { display: none; }
+.nuove-testa { display: flex; align-items: center; gap: .6rem; font-size: 1.3rem; line-height: 1.2; }
+.campanella { display: inline-block; font-size: 1.6rem; transform-origin: 50% 0; animation: nuove-dondola 1.2s ease-in-out infinite; }
+.nuove-elenco { margin: .6rem 0 .8rem; padding: 0; list-style: none; font-size: 1rem; }
+.nuove-elenco li { padding: .3rem 0; border-top: 1px solid rgba(255, 255, 255, .2); }
+.nuove-elenco li:first-child { border-top: 0; }
+.nuove-altre { opacity: .85; font-style: italic; }
+.nuove-stato { margin-left: .5rem; padding: .05rem .45rem; font-size: .78rem; color: var(--bottiglia); background: var(--ocra-chiaro); border-radius: 999px; white-space: nowrap; }
+.nuove-azioni { display: flex; flex-wrap: wrap; gap: .5rem; }
+.nuove-azioni button { padding: .55rem 1rem; font: inherit; font-weight: 600; border-radius: 6px; cursor: pointer; }
+.nuove-apri { color: var(--melograno-scuro); background: var(--bianco); border: 0; }
+.nuove-visto { color: var(--bianco); background: transparent; border: 2px solid var(--bianco); }
+.nuove-permesso { color: var(--bianco); background: transparent; border: 0; text-decoration: underline; font-weight: 400 !important; }
+body.con-novita .barra { box-shadow: inset 0 -4px 0 var(--ocra); }
+
+@keyframes nuove-entra { from { opacity: 0; transform: translate(-50%, -20px); } }
+@keyframes nuove-pulsa { 50% { box-shadow: 0 12px 36px rgba(94, 13, 37, .45), 0 0 0 8px rgba(227, 169, 47, .35); } }
+@keyframes nuove-dondola { 0%, 60%, 100% { transform: rotate(0); } 15% { transform: rotate(18deg); } 30% { transform: rotate(-14deg); } 45% { transform: rotate(8deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .nuove-prenotazioni, .campanella { animation: none; }
+}
+@media print { .nuove-prenotazioni { display: none !important; } }

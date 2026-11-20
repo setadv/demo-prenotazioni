@@ -9,6 +9,7 @@ import {
   leggiSala,
   modificaPrenotazione,
   nuovaPrenotazioneGestore,
+  novita,
   salvaConfigurazione,
   salvaSala,
   statistiche,
@@ -258,6 +259,7 @@ async function apiGestione(request, env, url, ctx) {
 async function rotteGestione(request, env, url, ctx, p, m) {
   if (p === "/api/admin/agenda" && m === "GET") return agenda(url, env, ctx);
   if (p === "/api/admin/periodo" && m === "GET") return periodo(url, env);
+  if (p === "/api/admin/novita" && m === "GET") return novita(url, env);
   if (p === "/api/admin/prenotazioni" && m === "POST") return nuovaPrenotazioneGestore(request, env, ctx);
   const pren = p.match(/^\/api\/admin\/prenotazioni\/([0-9a-f-]{36})(\/notifica)?$/);
   if (pren && !pren[2] && m === "PATCH") return modificaPrenotazione(request, env, pren[1], ctx);
