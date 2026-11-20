@@ -28,6 +28,39 @@
 }
 .menu a:hover { color: var(--bianco); background: rgba(255, 255, 255, .08); }
 .menu a[aria-current="page"] { color: var(--bottiglia); background: var(--celadon); font-weight: 600; }
+.menu { align-items: center; }
+.gruppo-menu { position: relative; }
+.gruppo-menu[hidden] { display: none; }
+.voce-gruppo {
+  padding: .4rem .7rem;
+  font: inherit;
+  color: #d6e6dd;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.voce-gruppo::after { content: ""; display: inline-block; margin-left: .4rem; border: 4px solid transparent; border-top-color: currentColor; border-bottom-width: 0; vertical-align: .15em; transition: transform .15s; }
+.voce-gruppo[aria-expanded="true"]::after { transform: rotate(180deg); }
+.voce-gruppo:hover, .voce-gruppo[aria-expanded="true"] { color: var(--bianco); background: rgba(255, 255, 255, .08); }
+.gruppo-menu.attivo .voce-gruppo { color: var(--bottiglia); background: var(--celadon); font-weight: 600; }
+.sottomenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 220px;
+  padding: .35rem;
+  background: var(--bianco);
+  border: 1px solid var(--linea);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(22, 53, 45, .22);
+}
+.sottomenu[hidden] { display: none; }
+.menu .sottomenu a { padding: .55rem .75rem; color: var(--bottiglia); white-space: nowrap; }
+.menu .sottomenu a:hover { color: var(--bottiglia); background: var(--celadon); }
+.menu .sottomenu a[aria-current="page"] { color: var(--bianco); background: var(--bottiglia); }
 .esci { padding: .4rem .8rem; color: var(--bianco); background: none; border: 1px solid #6f8f83; border-radius: 4px; }
 .ambiente { margin: 0; padding: .5rem clamp(16px, 3vw, 2rem); background: var(--ocra-chiaro); }
 .avviso-pannello {
@@ -414,6 +447,9 @@ label.piccola, legend.piccola { font-size: .85rem; color: var(--grigio); font-we
   .barra { padding: .6rem 16px; gap: .5rem 1rem; }
   .menu { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   .menu a { white-space: nowrap; }
+  .voce-gruppo { white-space: nowrap; }
+  /* Nella barra che scorre in orizzontale il sottomenu non deve essere tagliato. */
+  .sottomenu { position: fixed; top: auto; left: 16px; right: 16px; min-width: 0; margin-top: 6px; }
   .contenuto { padding: 1rem 16px 4rem; }
   .riga { grid-template-columns: 2.4rem 1fr; }
   .gestione-riga { grid-column: 1 / -1; }

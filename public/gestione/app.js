@@ -28,7 +28,7 @@ const VISTE = {
 const TITOLI = {
   agenda: "Agenda",
   sala: "Sala",
-  mappa: "Mappa tavoli",
+  mappa: "Disposizione tavoli",
   ordini: "Ordini",
   clienti: "Clienti",
   fidelity: "Fidelity e gift card",
@@ -101,6 +101,10 @@ async function apriVista() {
     if (a.dataset.vista === nome) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   });
+  document.querySelectorAll(".gruppo-menu").forEach((g) => {
+    g.classList.toggle("attivo", Boolean(g.querySelector(`a[data-vista="${nome}"]`)));
+  });
+  chiudiSottomenu();
   document.title = titoloConNovita(`${TITOLI[nome]}, ${sessione?.nome ?? "pannello"}`);
   const contenuto = $("contenuto");
   contenuto.replaceChildren();
@@ -112,6 +116,10 @@ async function avvia() {
   corrente.sessione = sessione;
   document.querySelectorAll(".menu a").forEach((a) => {
     a.hidden = !visibile(a.dataset.vista);
+  });
+  // Un gruppo senza voci visibili (per ruolo o piano) sparisce dalla barra.
+  document.querySelectorAll(".gruppo-menu").forEach((g) => {
+    g.hidden = !g.querySelector(".sottomenu a:not([hidden])");
   });
   banda();
   document.body.classList.toggle("sola-lettura", sessione.utente?.ruolo === "lettura");
@@ -126,6 +134,35 @@ async function avvia() {
     else location.hash = vista;
   });
 }
+
+/** Sottomenu della barra: si aprono al clic, si chiudono con Esc, cliccando fuori o scegliendo una voce. */
+function chiudiSottomenu(tranne) {
+  document.querySelectorAll(".voce-gruppo").forEach((b) => {
+    if (b === tranne) return;
+    b.setAttribute("aria-expanded", "false");
+    document.getElementById(b.getAttribute("aria-controls")).hidden = true;
+  });
+}
+document.querySelectorAll(".voce-gruppo").forEach((b) => {
+  b.addEventListener("click", () => {
+    const apri = b.getAttribute("aria-expanded") !== "true";
+    chiudiSottomenu(b);
+    b.setAttribute("aria-expanded", String(apri));
+    const pannello = document.getElementById(b.getAttribute("aria-controls"));
+    pannello.hidden = !apri;
+    if (apri) pannello.querySelector("a:not([hidden])")?.focus();
+  });
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".gruppo-menu")) chiudiSottomenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const aperto = document.querySelector('.voce-gruppo[aria-expanded="true"]');
+  if (!aperto) return;
+  chiudiSottomenu();
+  aperto.focus();
+});
 
 window.addEventListener("hashchange", () => {
   if (sessione) apriVista().catch((e) => avviso(e.message, "errore"));

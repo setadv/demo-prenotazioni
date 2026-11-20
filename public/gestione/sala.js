@@ -130,7 +130,7 @@ export async function vistaSala(contenitore) {
     );
     const sala = dati.sale.find((s) => s.id === salaId);
     if (!sala) {
-      area.replaceChildren(h("p", { class: "vuoto" }, "Non ci sono sale. Creane una in Mappa tavoli."));
+      area.replaceChildren(h("p", { class: "vuoto" }, "Non ci sono sale. Creane una in Impostazioni › Disposizione tavoli."));
       pannello.replaceChildren();
       return;
     }

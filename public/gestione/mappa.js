@@ -398,7 +398,7 @@ export async function vistaMappa(contenitore) {
   });
 
   contenitore.append(
-    h("div", { class: "testata-vista" }, h("h1", {}, "Mappa tavoli"), h("div", { class: "pulsanti-testata" }, scarta, salva)),
+    h("div", { class: "testata-vista" }, h("h1", {}, "Disposizione tavoli"), h("div", { class: "pulsanti-testata" }, scarta, salva)),
     statoSalvataggio,
     schede,
     h("div", { class: "layout-sala" }, area, proprieta),

@@ -30,16 +30,26 @@
       <p id="nome-locale" class="nome-locale">Ristorante</p>
       <nav class="menu" aria-label="Sezioni del pannello">
         <a href="#agenda" data-vista="agenda">Agenda</a>
-        <a href="#sala" data-vista="sala">Sala</a>
-        <a href="#mappa" data-vista="mappa">Mappa tavoli</a>
+        <a href="#sala" data-vista="sala" title="I tavoli del giorno, in servizio">Sala</a>
         <a href="#ordini" data-vista="ordini">Ordini</a>
-        <a href="#clienti" data-vista="clienti">Clienti</a>
-        <a href="#fidelity" data-vista="fidelity">Fidelity</a>
         <a href="#menu" data-vista="menu">Menù</a>
-        <a href="#sondaggi" data-vista="sondaggi">Sondaggi</a>
+        <div class="gruppo-menu">
+          <button type="button" class="voce-gruppo" aria-expanded="false" aria-controls="gruppo-clienti">Clienti</button>
+          <div id="gruppo-clienti" class="sottomenu" hidden>
+            <a href="#clienti" data-vista="clienti">Elenco clienti</a>
+            <a href="#fidelity" data-vista="fidelity">Fidelity e gift card</a>
+            <a href="#sondaggi" data-vista="sondaggi">Sondaggi</a>
+          </div>
+        </div>
         <a href="#statistiche" data-vista="statistiche">Statistiche</a>
-        <a href="#impostazioni" data-vista="impostazioni">Impostazioni</a>
-        <a href="#account" data-vista="account">Account</a>
+        <div class="gruppo-menu">
+          <button type="button" class="voce-gruppo" aria-expanded="false" aria-controls="gruppo-impostazioni">Impostazioni</button>
+          <div id="gruppo-impostazioni" class="sottomenu" hidden>
+            <a href="#impostazioni" data-vista="impostazioni">Ristorante e orari</a>
+            <a href="#mappa" data-vista="mappa">Disposizione tavoli</a>
+            <a href="#account" data-vista="account">Account e utenti</a>
+          </div>
+        </div>
       </nav>
       <button id="esci" class="esci" type="button">Esci</button>
     </header>
