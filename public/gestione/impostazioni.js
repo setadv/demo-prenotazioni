@@ -1,4 +1,4 @@
-import { GIORNI, ORDINE_GIORNI, api, apriDialogo, avviso, chiudiDialogo, h, oggiRoma } from "./comune.js";
+import { GIORNI, ORDINE_GIORNI, api, apriDialogo, avviso, chiudiDialogo, condiviso, h, oggiRoma } from "./comune.js";
 
 /** Riduce le immagini troppo grandi prima del caricamento. Il PNG resta PNG per conservare la trasparenza. */
 async function ridimensiona(file, maxLato, maxByte) {
@@ -123,8 +123,7 @@ export async function vistaImpostazioni(contenitore) {
     promozioni.replaceChildren(...conf.promozioni.map(rigaPromo));
     const chiusi = [0, 1, 2, 3, 4, 5, 6].filter((g) => !conf.orari.some((o) => o.giorno === g));
     giorniChiusi.textContent = chiusi.length ? `Giorni di chiusura settimanale: ${chiusi.map((g) => GIORNI[g].toLowerCase()).join(", ")}.` : "Aperto tutti i giorni.";
-    modulo.replaceChildren(
-      ...[
+    const sezioni = [
       h(
         "section",
         { class: "blocco" },
@@ -197,10 +196,67 @@ export async function vistaImpostazioni(contenitore) {
       sezioneRecensioni(),
       sezioneWhatsApp(),
       sezioneImmagini(),
-      errore,
-      h("div", { class: "barra-salva" }, salva),
-      ].filter(Boolean),
+    ].filter(Boolean);
+    modulo.replaceChildren(...schede(sezioni), errore, h("div", { class: "barra-salva" }, salva));
+  }
+
+  /**
+   * Le sezioni sono divise in schede: si vede un argomento alla volta.
+   * Le schede nascoste restano nel modulo, quindi "Salva" salva sempre tutto.
+   */
+  const SCHEDE = [
+    { id: "ristorante", titolo: "Ristorante", sotto: "Nome, contatti, logo e foto", sezioni: ["Il ristorante", "Logo e foto"] },
+    { id: "prenotazioni", titolo: "Orari e prenotazioni", sotto: "Servizi, chiusure, regole", sezioni: ["Orari dei servizi", "Chiusure straordinarie", "Regole di prenotazione"] },
+    { id: "promozioni", titolo: "Promozioni", sotto: "Sconti sugli orari da riempire", sezioni: ["Promozioni"] },
+    { id: "messaggi", titolo: "Messaggi ai clienti", sotto: "Conferma, recensione, sondaggio", sezioni: ["Messaggio di conferma", "Messaggi dopo la visita"] },
+    { id: "whatsapp", titolo: "WhatsApp", sotto: "Invio automatico con Meta", sezioni: ["WhatsApp"] },
+  ];
+  function schede(sezioni) {
+    const titolo = (el) => el.querySelector(":scope > h2")?.textContent ?? "";
+    const attiva = SCHEDE.some((t) => t.id === condiviso.schedaImpostazioni) ? condiviso.schedaImpostazioni : SCHEDE[0].id;
+    const pannelli = SCHEDE.map((t) => {
+      const proprie = t.sezioni.map((nome) => sezioni.find((el) => titolo(el) === nome)).filter(Boolean);
+      return h("div", { class: "scheda-impostazioni", id: `scheda-${t.id}`, role: "tabpanel", "aria-labelledby": `linguetta-${t.id}`, hidden: t.id !== attiva }, proprie);
+    });
+    // Una sezione non prevista nell'elenco finisce nella prima scheda, così non sparisce.
+    const assegnate = new Set(SCHEDE.flatMap((t) => t.sezioni));
+    pannelli[0].append(...sezioni.filter((el) => !assegnate.has(titolo(el))));
+    const linguette = SCHEDE.map((t) =>
+      h(
+        "button",
+        {
+          type: "button",
+          role: "tab",
+          id: `linguetta-${t.id}`,
+          "aria-controls": `scheda-${t.id}`,
+          "aria-selected": String(t.id === attiva),
+          tabindex: t.id === attiva ? "0" : "-1",
+          onclick: () => scegli(t.id),
+        },
+        h("strong", {}, t.titolo),
+        h("span", {}, t.sotto),
+      ),
     );
+    function scegli(id, fuoco = false) {
+      condiviso.schedaImpostazioni = id;
+      SCHEDE.forEach((t, n) => {
+        const scelta = t.id === id;
+        linguette[n].setAttribute("aria-selected", String(scelta));
+        linguette[n].tabIndex = scelta ? 0 : -1;
+        pannelli[n].hidden = !scelta;
+        if (scelta && fuoco) linguette[n].focus();
+      });
+      window.scrollTo({ top: 0 });
+    }
+    const elenco = h("div", { class: "linguette-impostazioni", role: "tablist", "aria-label": "Argomenti delle impostazioni", "aria-orientation": "vertical" }, linguette);
+    elenco.addEventListener("keydown", (e) => {
+      const n = SCHEDE.findIndex((t) => t.id === condiviso.schedaImpostazioni);
+      const passo = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+      if (passo === undefined) return;
+      e.preventDefault();
+      scegli(SCHEDE[(n + passo + SCHEDE.length) % SCHEDE.length].id, true);
+    });
+    return [h("div", { class: "layout-impostazioni" }, elenco, h("div", { class: "pannelli-impostazioni" }, pannelli))];
   }
 
   function sezioneMessaggi() {
