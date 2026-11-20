@@ -273,7 +273,7 @@ export async function vistaImpostazioni(contenitore) {
         { class: "canali-stato" },
         statoCanale(c.email, "Email", "Per l'invio automatico servono un account Resend e i secret RESEND_API_KEY ed EMAIL_MITTENTE."),
         statoCanale(c.sms, "SMS", "Per l'invio automatico servono un account Twilio e i secret TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_NUMERO."),
-        statoCanale(c.whatsapp, "WhatsApp", "Per l'invio automatico configura l'API WhatsApp Business: trovi i passaggi più sotto, nella sezione WhatsApp."),
+        statoCanale(c.whatsapp, "WhatsApp", "Per l'invio automatico configura l'API WhatsApp Business: trovi i passaggi nella scheda WhatsApp."),
       ),
       h(
         "label",
