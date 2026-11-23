@@ -70,23 +70,45 @@ function disegnaFiltro(presenti) {
   $("filtro").hidden = presenti.size === 0;
 }
 
+/** Foto del piatto a schermo intero: si chiude con la X, con Esc o toccando fuori dalla foto. */
+function apriFoto(src, nome) {
+  const box = $("lightbox");
+  $("lightbox-foto").src = src;
+  $("lightbox-foto").alt = nome;
+  $("lightbox-titolo").textContent = nome;
+  box.showModal();
+}
+
+$("lightbox-chiudi").addEventListener("click", () => $("lightbox").close());
+$("lightbox").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget || e.target.id === "lightbox-foto") $("lightbox").close();
+});
+
 function schedaPiatto(p) {
   const art = crea("article", `piatto${p.disponibile ? "" : " esaurito"}`);
   // La foto c'è solo se il ristorante l'ha caricata; se non si carica sparisce senza lasciare spazio.
   if (p.foto) {
-    const img = crea("img", "foto-piatto");
-    img.alt = tradotto(p, "nome");
+    const nome = tradotto(p, "nome");
+    const src = `/api/menu/foto/${encodeURIComponent(p.id)}?v=${encodeURIComponent(p.foto)}`;
+    // La miniatura è un pulsante: con un tocco la foto si apre grande.
+    const apri = crea("button", "foto-piatto");
+    apri.type = "button";
+    apri.setAttribute("aria-label", t("ingrandisci_foto", { nome }));
+    const img = crea("img");
+    img.alt = "";
     img.loading = "lazy";
     img.decoding = "async";
     img.width = 96;
     img.height = 96;
     img.addEventListener("error", () => {
-      img.remove();
+      apri.remove();
       art.classList.remove("con-foto");
     });
-    img.src = `/api/menu/foto/${encodeURIComponent(p.id)}?v=${encodeURIComponent(p.foto)}`;
+    img.src = src;
+    apri.append(img);
+    apri.addEventListener("click", () => apriFoto(src, nome));
     art.classList.add("con-foto");
-    art.append(img);
+    art.append(apri);
   }
   art.append(crea("h3", null, tradotto(p, "nome")), crea("span", "prezzo", prezzo(p.prezzo)));
   const descrizione = tradotto(p, "descrizione");

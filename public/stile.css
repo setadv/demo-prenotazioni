@@ -287,13 +287,24 @@ input::placeholder, textarea::placeholder { color: #70837b; }
 .piatto.esaurito h3 { text-decoration: line-through; }
 /* Foto facoltativa: la colonna esiste solo per i piatti che ne hanno una. */
 .piatto.con-foto { grid-template-columns: 96px 1fr auto; align-content: start; }
-.piatto.con-foto .foto-piatto { grid-column: 1; grid-row: 1 / span 3; width: 96px; height: 96px; object-fit: cover; border-radius: 6px; background: var(--celadon); }
+.piatto.con-foto .foto-piatto { grid-column: 1; grid-row: 1 / span 3; align-self: start; width: 96px; height: 96px; padding: 0; border: 0; border-radius: 6px; overflow: hidden; background: var(--celadon); cursor: zoom-in; }
+.foto-piatto img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .2s; }
+.foto-piatto:hover img { transform: scale(1.05); }
+.foto-piatto:focus-visible { outline: 3px solid var(--melograno); outline-offset: 2px; }
 .piatto.con-foto .desc, .piatto.con-foto .segni { grid-column: 2 / -1; }
 .piatto.esaurito .foto-piatto { opacity: .55; }
 @media (max-width: 480px) {
   .piatto.con-foto { grid-template-columns: 72px 1fr auto; column-gap: .75rem; }
   .piatto.con-foto .foto-piatto { width: 72px; height: 72px; }
 }
+/* Lightbox: la foto grande al centro, sfondo scuro; si chiude toccando ovunque. */
+.lightbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 1rem; border: 0; background: transparent; }
+.lightbox[open] { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; }
+.lightbox::backdrop { background: rgb(15 10 10 / .88); }
+.lightbox img { max-width: min(100%, 1200px); max-height: calc(100dvh - 6rem); object-fit: contain; border-radius: 6px; box-shadow: 0 10px 40px rgb(0 0 0 / .5); cursor: zoom-out; }
+.lightbox-titolo { margin: 0; color: #fff; font: 400 1.25rem "Young Serif", Georgia, serif; text-align: center; }
+.lightbox-chiudi { position: absolute; top: .75rem; right: .75rem; width: 2.75rem; height: 2.75rem; padding: 0; font-size: 1.9rem; line-height: 1; color: #fff; background: rgb(255 255 255 / .15); border: 0; border-radius: 50%; cursor: pointer; }
+.lightbox-chiudi:hover, .lightbox-chiudi:focus-visible { background: rgb(255 255 255 / .3); }
 .etichetta-esaurito { font-weight: 600; color: var(--melograno-scuro); }
 .nota-menu { margin: 2rem 0 .5rem; padding: .9rem 1rem; background: var(--bianco); border-left: 4px solid var(--ocra); border-radius: 4px; }
 .cta-menu { display: inline-block; width: auto; margin-top: 1.5rem; padding: .8rem 1.4rem; text-decoration: none; }
