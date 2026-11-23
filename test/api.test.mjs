@@ -11,7 +11,9 @@ const PORTA = 8799;
 const BASE = `http://127.0.0.1:${PORTA}`;
 const PASSWORD = "password-di-test";
 const stato = mkdtempSync(join(tmpdir(), "demo-pren-"));
-const wrangler = "node_modules/.bin/wrangler";
+// Wrangler avviato con node, così funziona anche su Windows (dove node_modules/.bin/wrangler è un .cmd).
+const wrangler = process.execPath;
+const WRANGLER_JS = "node_modules/wrangler/bin/wrangler.js";
 let server;
 let cookie = "";
 let posta;
@@ -94,14 +96,14 @@ const prenota = (dati, ip = "10.0.0.1") =>
 
 before(async () => {
   await avviaPosta();
-  execFileSync(wrangler, ["d1", "migrations", "apply", "DB", "--local", "--config", "wrangler.test.jsonc", "--persist-to", stato], {
+  execFileSync(wrangler, [WRANGLER_JS, "d1", "migrations", "apply", "DB", "--local", "--config", "wrangler.test.jsonc", "--persist-to", stato], {
     env: { ...process.env, CI: "1" },
     stdio: "pipe",
   });
   server = spawn(
     wrangler,
     [
-      "dev", "--config", "wrangler.test.jsonc", "--port", String(PORTA), "--ip", "127.0.0.1", "--persist-to", stato,
+      WRANGLER_JS, "dev", "--config", "wrangler.test.jsonc", "--port", String(PORTA), "--ip", "127.0.0.1", "--persist-to", stato,
       "--var", `ADMIN_PASSWORD:${PASSWORD}`, "--var", "SESSION_SECRET:segreto-di-test-lungo-trentadue-caratteri",
       "--var", "RESEND_API_KEY:re_finta", "--var", "EMAIL_MITTENTE:Prenotazioni <prenotazioni@esempio.it>",
       "--var", `RESEND_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/email`,
@@ -127,10 +129,16 @@ before(async () => {
   throw new Error("Il server locale non è partito");
 });
 
-after(() => {
-  server?.kill("SIGTERM");
+after(async () => {
+  if (server && server.exitCode === null) {
+    const uscito = new Promise((f) => server.once("exit", f));
+    // Su Windows kill() ferma solo node: taskkill /T chiude anche workerd, che tiene aperti i file del database.
+    if (process.platform === "win32") execFileSync("taskkill", ["/pid", String(server.pid), "/T", "/F"], { stdio: "ignore" });
+    else server.kill("SIGTERM");
+    await uscito;
+  }
   posta?.close();
-  rmSync(stato, { recursive: true, force: true });
+  rmSync(stato, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 test("le pagine si aprono con gli header di sicurezza", async () => {
