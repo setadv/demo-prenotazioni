@@ -78,6 +78,15 @@ npm install
 npm test
 ```
 
+## Traduzione automatica del menù
+
+Nel pannello, sezione Menù, il pulsante **Traduci in automatico** traduce dall'italiano in inglese, tedesco, francese e spagnolo:
+
+- nella testata: tutte le categorie e i piatti a cui manca qualche traduzione, poi salva;
+- nella scheda di un piatto o di una categoria: riempie i campi delle traduzioni, che il gestore rilegge prima di salvare.
+
+Riempie solo le traduzioni vuote: quelle già scritte, anche a mano, non vengono toccate. Usa Workers AI (modello `@cf/meta/m2m100-1.2b`, binding `AI` in `wrangler.jsonc`), senza chiavi da impostare; il consumo rientra nel piano Workers AI dell'account Cloudflare. In `wrangler dev` il binding `AI` si collega a Cloudflare e richiede `wrangler login`. Nei test un server finto prende il suo posto tramite la variabile `TRADUZIONE_ENDPOINT`.
+
 ## Logo e foto del locale
 
 Si caricano da Impostazioni nel pannello e sono salvati nel database D1: non serve un bucket R2. Le foto troppo grandi vengono ridotte nel browser prima del caricamento.

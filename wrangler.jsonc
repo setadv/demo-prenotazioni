@@ -12,6 +12,8 @@
   // Richieste di recensione: controllate ogni 15 minuti.
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": { "APP_ENV": "production", "SUPERADMIN_EMAIL": "demo@setadv.com" },
+  // Workers AI: traduzione automatica del menù nel pannello.
+  "ai": { "binding": "AI" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -22,6 +24,7 @@
   ],
   "previews": {
     "vars": { "APP_ENV": "preview", "SUPERADMIN_EMAIL": "demo@setadv.com" },
+    "ai": { "binding": "AI" },
     "d1_databases": [
       {
         "binding": "DB",

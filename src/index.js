@@ -17,6 +17,7 @@ import {
 import { annullaPrenotazione, disponibilita, infoRistorante, leggiPrenotazione, nuovaPrenotazione } from "./pubblico.js";
 import { dettaglioCliente, elencoClienti, esportaClienti, modificaCliente } from "./clienti.js";
 import { leggiMenu, menuPubblico, qrCode, salvaMenu } from "./menu.js";
+import { traduciMenu } from "./traduzioni.js";
 import { elaboraRecensioni } from "./notifiche.js";
 import { riceviWebhook, statoWhatsApp, verificaWebhook } from "./whatsapp.js";
 import { acquistaGift, annullaGift, cercaCodice, dettaglioGift, elencoGift, emettiGift, infoGift, leggiBuono, usaGift } from "./buoni.js";
@@ -275,6 +276,7 @@ async function rotteGestione(request, env, url, ctx, p, m) {
   if (cliente && m === "PATCH") return modificaCliente(request, env, cliente[1]);
   if (p === "/api/admin/menu" && m === "GET") return leggiMenu(env);
   if (p === "/api/admin/menu" && m === "PUT") return salvaMenu(request, env);
+  if (p === "/api/admin/menu/traduci" && m === "POST") return traduciMenu(request, env);
   if (p === "/api/admin/whatsapp" && m === "GET") return statoWhatsApp(url, env);
   if (p === "/api/admin/moduli" && m === "GET") return leggiModuli(env);
   const modulo = p.match(/^\/api\/admin\/moduli\/(fidelity|gift|sondaggio|ordini)$/);

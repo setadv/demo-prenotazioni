@@ -38,12 +38,16 @@ function avviaPosta() {
     req.on("data", (c) => (corpo += c));
     req.on("end", () => {
       const voce = { percorso: req.url, auth: req.headers.authorization, corpo };
-      if (req.url.startsWith("/email") || req.url.startsWith("/wa")) voce.json = JSON.parse(corpo);
+      if (req.url.startsWith("/email") || req.url.startsWith("/wa") || req.url.startsWith("/traduci")) voce.json = JSON.parse(corpo);
       else voce.form = Object.fromEntries(new URLSearchParams(corpo));
       inviati.push(voce);
-      const errore = voce.json?.to?.[0] === "errore@esempio.it";
+      const errore = voce.json?.to?.[0] === "errore@esempio.it" || voce.json?.text === "guasto";
       res.writeHead(errore ? 500 : 200, { "content-type": "application/json" });
-      if (req.url.startsWith("/wa")) res.end(JSON.stringify({ messaging_product: "whatsapp", messages: [{ id: `wamid.test${inviati.length}` }] }));
+      if (req.url.startsWith("/traduci")) {
+        // Traduttore finto: antepone la lingua; il testo "guasto" simula un servizio che non risponde.
+        if (errore) res.end("{}");
+        else res.end(JSON.stringify({ translated_text: `[${voce.json.target_lang}] ${voce.json.text}` }));
+      } else if (req.url.startsWith("/wa")) res.end(JSON.stringify({ messaging_product: "whatsapp", messages: [{ id: `wamid.test${inviati.length}` }] }));
       else if (req.url.startsWith("/stripe")) res.end(JSON.stringify({ id: `cs_test_${inviati.length}`, url: `https://checkout.stripe.com/c/pay/cs_test_${inviati.length}` }));
       else res.end(errore ? '{"message":"casella inesistente"}' : '{"id":"finto"}');
     });
@@ -117,6 +121,7 @@ before(async () => {
       "--var", "STRIPE_SECRET_KEY:sk_test_finta", "--var", `STRIPE_WEBHOOK_SECRET:${SEGRETO_STRIPE}`,
       "--var", `STRIPE_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/stripe`,
       "--var", "SUPERADMIN_EMAIL:super@esempio.it",
+      "--var", `TRADUZIONE_ENDPOINT:http://127.0.0.1:${PORTA_POSTA}/traduci`,
     ],
     { stdio: "ignore", env: { ...process.env, CI: "1", WRANGLER_SEND_METRICS: "false" } },
   );
@@ -542,6 +547,27 @@ test("il gestore modifica il menù e il cliente vede subito le modifiche", async
   assert.equal((await admin("/api/admin/menu", { method: "PUT", body: { categorie, nota: menu.nota } })).status, 400, "id duplicato");
   const dopo = await (await chiama("/api/menu")).json();
   assert.equal(dopo.categorie.find((c) => c.id === "pizze").piatti[0].prezzo, 850, "un salvataggio rifiutato non cambia nulla");
+});
+
+test("la traduzione automatica riempie le quattro lingue senza salvare", async () => {
+  assert.equal((await chiama("/api/admin/menu/traduci", { method: "POST", body: { testi: { nome: "Carbonara" } } })).status, 401);
+  const r = await admin("/api/admin/menu/traduci", { method: "POST", body: { testi: { nome: "Carbonara", descrizione: "Guanciale, uova e pecorino" } } });
+  assert.equal(r.status, 200);
+  const { traduzioni } = await r.json();
+  assert.deepEqual(Object.keys(traduzioni).sort(), ["de", "en", "es", "fr"]);
+  assert.equal(traduzioni.en.nome, "[en] Carbonara");
+  assert.equal(traduzioni.de.descrizione, "[de] Guanciale, uova e pecorino");
+  const chiamate = inviati.filter((v) => v.percorso === "/traduci" && v.json.text === "Carbonara");
+  assert.equal(chiamate.length, 4);
+  assert.ok(chiamate.every((v) => v.json.source_lang === "it"));
+
+  const soloInglese = await (await admin("/api/admin/menu/traduci", { method: "POST", body: { testi: { nome: "Tiramisù" }, lingue: ["en", "xx"] } })).json();
+  assert.deepEqual(Object.keys(soloInglese.traduzioni), ["en"]);
+  assert.equal((await admin("/api/admin/menu/traduci", { method: "POST", body: { testi: { nome: "  " } } })).status, 400, "testo vuoto");
+  assert.equal((await admin("/api/admin/menu/traduci", { method: "POST", body: { testi: { nome: "x".repeat(81) } } })).status, 400, "troppo lungo");
+  assert.equal((await admin("/api/admin/menu/traduci", { method: "POST", body: { testi: { nome: "guasto" } } })).status, 502);
+  const menu = await (await chiama("/api/menu")).json();
+  assert.ok(!JSON.stringify(menu).includes("[en]"), "la traduzione non salva il menù");
 });
 
 test("i QR code aprono solo pagine di questo sito", async () => {

@@ -487,6 +487,9 @@ label.piccola, legend.piccola { font-size: .85rem; color: var(--grigio); font-we
 .traduzioni[open] summary { margin-bottom: .5rem; }
 .traduzioni label { margin-top: .6rem; }
 .traduzioni .aiuto { margin: .2rem 0 0; }
+.riga-traduci { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; margin-top: 1rem; }
+.riga-traduci .aiuto { margin: 0; }
+.blocco-traduzioni .traduzioni { margin-top: .5rem; }
 .lingua-traduzione { display: grid; gap: .3rem; margin: .75rem 0 0; padding: .6rem .75rem; background: var(--bianco); border: 0; border-radius: 4px; }
 .lingua-traduzione label { margin-top: .2rem; }
 

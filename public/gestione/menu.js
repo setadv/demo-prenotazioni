@@ -56,8 +56,51 @@ export async function vistaMenu(contenitore) {
 
   const copia = () => structuredClone({ categorie: menu.categorie, nota: menu.nota });
 
-  function campiTraduzioni(traduzioni, campi) {
-    return h(
+  /** Chiede al server le traduzioni dall'italiano; non salva nulla. */
+  async function chiediTraduzione(testi) {
+    return (await api("/api/admin/menu/traduci", { metodo: "POST", corpo: { testi } })).traduzioni;
+  }
+
+  /** Campi delle traduzioni con il pulsante che riempie quelli vuoti a partire dal testo italiano (letto da `sorgente`). */
+  function campiTraduzioni(traduzioni, campi, sorgente) {
+    const stato = h("span", { class: "aiuto", role: "status" });
+    const pulsante = h(
+      "button",
+      {
+        type: "button",
+        class: "secondario compatta",
+        onclick: async () => {
+          const testi = sorgente();
+          if (!Object.values(testi).some((v) => v.trim())) {
+            stato.textContent = "Scrivi prima il testo in italiano.";
+            return;
+          }
+          pulsante.disabled = true;
+          stato.textContent = "Traduzione in corso…";
+          try {
+            const tradotte = await chiediTraduzione(testi);
+            let riempiti = 0;
+            for (const el of dettagli.querySelectorAll("[data-lingua]")) {
+              const valore = tradotte[el.dataset.lingua]?.[el.dataset.campo];
+              if (valore && !el.value.trim()) {
+                el.value = el.maxLength > 0 ? valore.slice(0, el.maxLength) : valore;
+                riempiti += 1;
+              }
+            }
+            dettagli.open = true;
+            stato.textContent = riempiti
+              ? "Fatto. Rileggi le traduzioni, correggi se serve e salva."
+              : "Le traduzioni erano già scritte. Per rifarne una, svuota il campo e premi di nuovo.";
+          } catch (e) {
+            stato.textContent = e.message;
+          } finally {
+            pulsante.disabled = false;
+          }
+        },
+      },
+      "Traduci in automatico",
+    );
+    const dettagli = h(
       "details",
       { class: "traduzioni" },
       h("summary", {}, "Traduzioni per i clienti stranieri"),
@@ -79,6 +122,12 @@ export async function vistaMenu(contenitore) {
           ),
         ),
       ),
+    );
+    return h(
+      "div",
+      { class: "blocco-traduzioni" },
+      h("div", { class: "riga-traduci" }, pulsante, stato),
+      dettagli,
     );
   }
 
@@ -129,10 +178,14 @@ export async function vistaMenu(contenitore) {
           h("label", { class: "spunta" }, h("input", { type: "checkbox", name: "allergeni", value: k, checked: p.allergeni.includes(k) }), nome),
         ),
       ),
-      campiTraduzioni(p.traduzioni, [
-        ["nome", "Nome", 80, false],
-        ["descrizione", "Descrizione", 300, true],
-      ]),
+      campiTraduzioni(
+        p.traduzioni,
+        [
+          ["nome", "Nome", 80, false],
+          ["descrizione", "Descrizione", 300, true],
+        ],
+        () => ({ nome: modulo.querySelector("[name=nome]").value, descrizione: modulo.querySelector("[name=descrizione]").value }),
+      ),
       errore,
       h(
         "div",
@@ -202,7 +255,7 @@ export async function vistaMenu(contenitore) {
       { class: "modulo-dialogo" },
       h("h2", {}, categoria ? `Modifica ${categoria.nome}` : "Nuova categoria"),
       h("label", {}, "Nome", h("input", { name: "nome", required: true, maxlength: 60, value: c.nome, placeholder: "Antipasti, Pizze, Vini" })),
-      campiTraduzioni(c.traduzioni, [["nome", "Nome", 60, false]]),
+      campiTraduzioni(c.traduzioni, [["nome", "Nome", 60, false]], () => ({ nome: modulo.querySelector("[name=nome]").value })),
       h(
         "div",
         { class: "pulsanti-dialogo" },
@@ -354,6 +407,77 @@ export async function vistaMenu(contenitore) {
     );
   }
 
+  /** Elementi del menù (categorie e piatti) a cui manca almeno una traduzione di un testo scritto in italiano. */
+  function daTradurre(menuCopia) {
+    const manca = (el, campi) => campi.some((c) => el[c]?.trim() && Object.keys(LINGUE).some((l) => !el.traduzioni?.[l]?.[c]));
+    return [
+      ...menuCopia.categorie.filter((c) => manca(c, ["nome"])).map((el) => ({ el, campi: { nome: 60 } })),
+      ...menuCopia.categorie.flatMap((c) => c.piatti).filter((p) => manca(p, ["nome", "descrizione"])).map((el) => ({ el, campi: { nome: 80, descrizione: 300 } })),
+    ];
+  }
+
+  /** Traduce in automatico tutte le portate e le categorie: riempie solo le traduzioni mancanti, poi salva una volta. */
+  function apriTraduciTutto() {
+    const nuovo = copia();
+    const voci = daTradurre(nuovo);
+    const piatti = voci.filter((v) => "descrizione" in v.campi).length;
+    const categorie = voci.length - piatti;
+    const stato = h("p", { class: "legenda", role: "status" });
+    const avvia = h("button", { type: "button", class: "azione" }, "Traduci");
+    const annulla = h("button", { type: "button", class: "secondario", onclick: chiudiDialogo }, voci.length ? "Annulla" : "Chiudi");
+    const elenco = [piatti ? `${piatti} ${piatti === 1 ? "piatto" : "piatti"}` : "", categorie ? `${categorie} ${categorie === 1 ? "categoria" : "categorie"}` : ""].filter(Boolean).join(" e ");
+
+    avvia.addEventListener("click", async () => {
+      avvia.disabled = true;
+      annulla.disabled = true;
+      let fatti = 0;
+      let errore = null;
+      for (const { el, campi } of voci) {
+        stato.textContent = `Traduzione in corso: ${fatti + 1} di ${voci.length}…`;
+        const testi = Object.fromEntries(Object.keys(campi).filter((c) => el[c]?.trim()).map((c) => [c, el[c]]));
+        try {
+          const tradotte = await chiediTraduzione(testi);
+          el.traduzioni ??= {};
+          for (const l of Object.keys(LINGUE)) {
+            for (const [c, max] of Object.entries(campi)) {
+              const valore = tradotte[l]?.[c];
+              if (valore && !el.traduzioni[l]?.[c]) (el.traduzioni[l] ??= {})[c] = valore.slice(0, max);
+            }
+          }
+          fatti += 1;
+        } catch (e) {
+          errore = e.message;
+          break;
+        }
+      }
+      if (fatti) {
+        const salvato = await salva(nuovo, errore ? null : `${fatti === 1 ? "Tradotto 1 elemento" : `Tradotti ${fatti} elementi`} del menù. Rileggi le traduzioni dalla scheda di ogni piatto.`);
+        if (salvato && !errore) return chiudiDialogo();
+      }
+      stato.textContent = errore ? `${errore}${fatti ? ` Ho salvato i ${fatti} già tradotti: riprova per gli altri.` : ""}` : "Salvataggio non riuscito. Riprova.";
+      annulla.disabled = false;
+      annulla.textContent = "Chiudi";
+    });
+
+    apriDialogo(
+      h(
+        "div",
+        { class: "modulo-dialogo" },
+        h("h2", {}, "Traduci il menù"),
+        voci.length
+          ? h(
+              "p",
+              {},
+              `Da tradurre: ${elenco}. Traduco dall'italiano in inglese, tedesco, francese e spagnolo, riempiendo solo le traduzioni che mancano: quelle già scritte restano come sono.`,
+            )
+          : h("p", {}, "Tutte le portate e le categorie hanno già le traduzioni nelle quattro lingue."),
+        voci.length ? h("p", { class: "aiuto" }, "È una traduzione automatica: rileggila, soprattutto i nomi dei piatti tipici.") : null,
+        stato,
+        h("div", { class: "pulsanti-dialogo" }, annulla, voci.length ? avvia : null),
+      ),
+    );
+  }
+
   /** QR code da stampare: uno generale, uno per la prenotazione e uno per ogni tavolo (indica il tavolo nel menù). */
   function apriQr() {
     const tavoli = [...sala.tavoli].sort((a, b) => a.nome.localeCompare(b.nome, "it", { numeric: true }));
@@ -418,6 +542,7 @@ export async function vistaMenu(contenitore) {
         "div",
         { class: "pulsanti-testata" },
         h("a", { class: "secondario pulsante-link", href: paginaPubblica("/menu"), target: "_blank", rel: "noopener" }, "Apri il menù"),
+        h("button", { type: "button", class: "secondario compatta", onclick: apriTraduciTutto }, "Traduci in automatico"),
         h("button", { type: "button", class: "azione compatta", onclick: apriQr }, "QR code per i tavoli"),
       ),
     ),
