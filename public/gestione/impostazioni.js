@@ -1,4 +1,4 @@
-import { GIORNI, ORDINE_GIORNI, api, apriDialogo, avviso, chiudiDialogo, condiviso, h, oggiRoma, paginaPubblica } from "./comune.js";
+import { GIORNI, ORDINE_GIORNI, api, apriDialogo, avviso, chiudiDialogo, condiviso, h, oggiRoma, paginaPubblica, ridimensiona } from "./comune.js";
 
 /** Indirizzo della pagina di prenotazione del ristorante, da aprire in anteprima o da copiare. */
 function bloccoPaginaPubblica() {
@@ -35,25 +35,6 @@ function bloccoPaginaPubblica() {
       h("a", { class: "azione compatta pulsante-link", href: link, target: "_blank", rel: "noopener" }, "Apri l'anteprima"),
     ),
   );
-}
-
-/** Riduce le immagini troppo grandi prima del caricamento. Il PNG resta PNG per conservare la trasparenza. */
-async function ridimensiona(file, maxLato, maxByte) {
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new Error("Scegli un'immagine JPG, PNG o WebP.");
-  const bitmap = await createImageBitmap(file);
-  const scala = Math.min(1, maxLato / Math.max(bitmap.width, bitmap.height));
-  if (scala === 1 && file.size <= maxByte) return file;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scala);
-  canvas.height = Math.round(bitmap.height * scala);
-  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  const tipo = file.type === "image/png" ? "image/png" : "image/jpeg";
-  for (const qualita of [0.86, 0.75, 0.62]) {
-    const blob = await new Promise((ok) => canvas.toBlob(ok, tipo, qualita));
-    if (blob && blob.size <= maxByte) return blob;
-    if (tipo === "image/png") break;
-  }
-  throw new Error(`L'immagine è ancora troppo pesante: usane una più leggera di ${Math.round(maxByte / 1024)} KB.`);
 }
 
 const LINGUE = { en: "Inglese", de: "Tedesco", fr: "Francese", es: "Spagnolo" };

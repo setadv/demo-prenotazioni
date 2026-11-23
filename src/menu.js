@@ -2,6 +2,7 @@ import qrcode from "qrcode-generator";
 import { ALTRE_LINGUE, LINGUE } from "./lingue.js";
 import { ErroreRichiesta, intero, json, leggiImpostazioni, leggiJson, salvaImpostazione, testo } from "./util.js";
 import { linkPubblico } from "./ristoranti.js";
+import { tipoImmagine } from "./gestione.js";
 
 /** I 14 allergeni da dichiarare secondo il Regolamento UE 1169/2011. */
 export const ALLERGENI = [
@@ -34,12 +35,15 @@ function leggiTraduzioni(valore) {
 }
 
 async function caricaMenu(env) {
-  const [categorie, piatti] = await env.DB.batch([
+  const [categorie, piatti, foto] = await env.DB.batch([
     env.DB.prepare("SELECT id, nome, traduzioni FROM menu_categorie WHERE ristorante_id = ? ORDER BY ordine, nome").bind(env.RID),
     env.DB.prepare(
       "SELECT id, categoria_id, nome, descrizione, prezzo, allergeni, tag, traduzioni, disponibile, asporto FROM menu_piatti WHERE ristorante_id = ? ORDER BY ordine, nome",
     ).bind(env.RID),
+    env.DB.prepare("SELECT piatto_id, aggiornato_il FROM menu_foto WHERE ristorante_id = ?").bind(env.RID),
   ]);
+  // Versione della foto (data di caricamento) o null: senza foto la pagina non mostra nulla.
+  const versioni = new Map(foto.results.map((f) => [f.piatto_id, f.aggiornato_il]));
   return categorie.results.map((c) => ({
     id: c.id,
     nome: c.nome,
@@ -56,6 +60,7 @@ async function caricaMenu(env) {
         traduzioni: leggiTraduzioni(p.traduzioni),
         disponibile: Boolean(p.disponibile),
         asporto: Boolean(p.asporto),
+        foto: versioni.get(p.id) ?? null,
       })),
   }));
 }
@@ -176,8 +181,63 @@ export async function salvaMenu(request, env) {
       ).bind(p.id, p.categoria_id, p.nome, p.descrizione, p.prezzo, p.allergeni, p.tag, JSON.stringify(p.traduzioni), p.disponibile, p.asporto, p.ordine, env.RID),
     ),
     ...note.map(([k, v]) => salvaImpostazione(env, k, v)),
+    // Le foto dei piatti eliminati non servono più.
+    env.DB.prepare("DELETE FROM menu_foto WHERE ristorante_id = ? AND piatto_id NOT IN (SELECT value FROM json_each(?))").bind(
+      env.RID,
+      JSON.stringify(piatti.map((p) => p.id)),
+    ),
   ]);
   return leggiMenu(env);
+}
+
+// ---------- Foto dei piatti ----------
+
+/** Il pannello riduce la foto prima di caricarla: il limite lascia margine e tiene leggero il database. */
+export const MAX_FOTO_PIATTO = 400 * 1024;
+
+async function piattoEsistente(env, id) {
+  if (!ID.test(id)) throw new ErroreRichiesta("Piatto non valido.", 404);
+  const p = await env.DB.prepare("SELECT nome FROM menu_piatti WHERE id = ? AND ristorante_id = ?").bind(id, env.RID).first();
+  if (!p) throw new ErroreRichiesta("Piatto non trovato. Salva prima il piatto, poi aggiungi la foto.", 404);
+}
+
+export async function salvaFotoPiatto(request, env, id) {
+  await piattoEsistente(env, id);
+  const dati = new Uint8Array(await request.arrayBuffer());
+  if (!dati.byteLength || dati.byteLength > MAX_FOTO_PIATTO) {
+    throw new ErroreRichiesta(`Carica una foto fino a ${MAX_FOTO_PIATTO / 1024} KB.`, 413);
+  }
+  const tipo = tipoImmagine(dati);
+  if (!tipo) throw new ErroreRichiesta("Carica una foto JPG, PNG o WebP.", 415);
+  const aggiornato = new Date().toISOString();
+  await env.DB.prepare(
+    `INSERT INTO menu_foto (ristorante_id, piatto_id, tipo, dati, aggiornato_il) VALUES (?1, ?2, ?3, ?4, ?5)
+     ON CONFLICT (ristorante_id, piatto_id) DO UPDATE SET tipo = ?3, dati = ?4, aggiornato_il = ?5`,
+  )
+    .bind(env.RID, id, tipo, dati.buffer, aggiornato)
+    .run();
+  return json({ ok: true, foto: aggiornato });
+}
+
+export async function eliminaFotoPiatto(env, id) {
+  if (!ID.test(id)) throw new ErroreRichiesta("Piatto non valido.", 404);
+  await env.DB.prepare("DELETE FROM menu_foto WHERE ristorante_id = ? AND piatto_id = ?").bind(env.RID, id).run();
+  return json({ ok: true, foto: null });
+}
+
+/** Foto pubblica di un piatto. L'indirizzo contiene la versione (?v=), quindi si può tenere in cache a lungo. */
+export async function mostraFotoPiatto(url, env, id) {
+  if (!ID.test(id)) return new Response(null, { status: 404 });
+  const f = await env.DB.prepare("SELECT tipo, dati FROM menu_foto WHERE ristorante_id = ? AND piatto_id = ?").bind(env.RID, id).first();
+  if (!f) return new Response(null, { status: 404 });
+  return new Response(new Uint8Array(f.dati), {
+    headers: {
+      "content-type": f.tipo,
+      "cache-control": url.searchParams.has("v") ? "public, max-age=31536000, immutable" : "public, max-age=300",
+      "x-content-type-options": "nosniff",
+      "x-robots-tag": "noindex",
+    },
+  });
 }
 
 /**

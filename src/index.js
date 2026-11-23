@@ -16,7 +16,7 @@ import {
 } from "./gestione.js";
 import { annullaPrenotazione, disponibilita, infoRistorante, leggiPrenotazione, nuovaPrenotazione } from "./pubblico.js";
 import { dettaglioCliente, elencoClienti, esportaClienti, modificaCliente } from "./clienti.js";
-import { leggiMenu, menuPubblico, qrCode, salvaMenu } from "./menu.js";
+import { eliminaFotoPiatto, leggiMenu, menuPubblico, mostraFotoPiatto, qrCode, salvaFotoPiatto, salvaMenu } from "./menu.js";
 import { traduciMenu } from "./traduzioni.js";
 import { elaboraRecensioni } from "./notifiche.js";
 import { riceviWebhook, statoWhatsApp, verificaWebhook } from "./whatsapp.js";
@@ -178,6 +178,8 @@ async function apiPubblica(request, env, url, ctx) {
   if (p === "/api/ristorante" && m === "GET") return infoRistorante(env);
   if (p === "/api/disponibilita" && m === "GET") return disponibilita(request, url, env);
   if (p === "/api/menu" && m === "GET") return menuPubblico(url, env);
+  const fotoPiatto = p.match(/^\/api\/menu\/foto\/([^/]+)$/);
+  if (fotoPiatto && m === "GET") return mostraFotoPiatto(url, env, fotoPiatto[1]);
   if (p === "/api/qr" && m === "GET") return qrCode(url, env);
   if (p === "/api/ordini/info" && m === "GET") return infoOrdini(env);
   if (p === "/api/ordini/fasce" && m === "GET") return fasceOrdini(request, url, env);
@@ -277,6 +279,9 @@ async function rotteGestione(request, env, url, ctx, p, m) {
   if (p === "/api/admin/menu" && m === "GET") return leggiMenu(env);
   if (p === "/api/admin/menu" && m === "PUT") return salvaMenu(request, env);
   if (p === "/api/admin/menu/traduci" && m === "POST") return traduciMenu(request, env);
+  const fotoAdmin = p.match(/^\/api\/admin\/menu\/foto\/([^/]+)$/);
+  if (fotoAdmin && m === "PUT") return salvaFotoPiatto(request, env, fotoAdmin[1]);
+  if (fotoAdmin && m === "DELETE") return eliminaFotoPiatto(env, fotoAdmin[1]);
   if (p === "/api/admin/whatsapp" && m === "GET") return statoWhatsApp(url, env);
   if (p === "/api/admin/moduli" && m === "GET") return leggiModuli(env);
   const modulo = p.match(/^\/api\/admin\/moduli\/(fidelity|gift|sondaggio|ordini)$/);

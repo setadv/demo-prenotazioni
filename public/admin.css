@@ -512,6 +512,12 @@ label.piccola, legend.piccola { font-size: .85rem; color: var(--grigio); font-we
 .voce-menu.esaurito .voce-menu-nome strong { text-decoration: line-through; color: var(--grigio); }
 .voce-menu-azioni { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 .voce-menu-azioni button { padding: .35rem .65rem; font-size: .9rem; }
+.voce-menu-foto { flex: 0 0 56px; width: 56px; height: 56px; object-fit: cover; border-radius: 4px; }
+.foto-piatto { display: grid; gap: .4rem; }
+.foto-piatto .legenda { margin: 0; }
+.foto-piatto .azioni { align-items: center; }
+.foto-piatto input[type="file"] { max-width: 100%; }
+.anteprima-foto-piatto { display: block; width: 160px; height: 120px; object-fit: cover; border-radius: 4px; background: var(--celadon); }
 .interruttore { align-items: center; margin-right: .4rem; font-size: .9rem; }
 .aggiungi-categoria { justify-self: start; }
 .griglia-spunte { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .35rem 1rem; margin: 1rem 0 0; padding: 0; border: 0; }

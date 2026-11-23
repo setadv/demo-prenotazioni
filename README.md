@@ -91,6 +91,10 @@ Riempie solo le traduzioni vuote: quelle già scritte, anche a mano, non vengono
 
 Si caricano da Impostazioni nel pannello e sono salvati nel database D1: non serve un bucket R2. Le foto troppo grandi vengono ridotte nel browser prima del caricamento.
 
+## Foto dei piatti
+
+Ogni piatto può avere una foto facoltativa. Si carica, si sostituisce o si toglie dalla scheda del piatto nel pannello Menù, dopo aver salvato il piatto almeno una volta. Il browser la riduce a 1200 px sul lato lungo e la converte in JPG; il server accetta JPG, PNG o WebP fino a 400 KB. Le foto stanno nella tabella D1 `menu_foto` (migrazione 0009) e spariscono con il piatto. Nel menù pubblico la foto compare accanto al piatto; i piatti senza foto restano come prima, senza spazi vuoti.
+
 ## Messaggi di conferma
 
 Il cliente sceglie se ricevere la conferma via email, SMS o WhatsApp. Il messaggio parte quando la prenotazione diventa confermata, in automatico o dall'agenda, e una sola volta. Il testo si modifica in Impostazioni.

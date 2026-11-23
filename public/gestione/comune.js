@@ -156,3 +156,30 @@ export const puo = (azione) => {
   if (ruolo === "lettura") return false;
   return !["configurare", "utenti", "esportare"].includes(azione);
 };
+
+/**
+ * Riduce le immagini troppo grandi prima del caricamento. Il PNG resta PNG per conservare la trasparenza,
+ * a meno che serva un JPG (le foto dei piatti): allora lo sfondo trasparente diventa bianco.
+ */
+export async function ridimensiona(file, maxLato, maxByte, { jpg = false } = {}) {
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new Error("Scegli un'immagine JPG, PNG o WebP.");
+  const bitmap = await createImageBitmap(file);
+  const scala = Math.min(1, maxLato / Math.max(bitmap.width, bitmap.height));
+  if (scala === 1 && file.size <= maxByte && !(jpg && file.type === "image/png")) return file;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scala);
+  canvas.height = Math.round(bitmap.height * scala);
+  const ctx = canvas.getContext("2d");
+  const tipo = file.type === "image/png" && !jpg ? "image/png" : "image/jpeg";
+  if (tipo === "image/jpeg") {
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  for (const qualita of [0.86, 0.75, 0.62]) {
+    const blob = await new Promise((ok) => canvas.toBlob(ok, tipo, qualita));
+    if (blob && blob.size <= maxByte) return blob;
+    if (tipo === "image/png") break;
+  }
+  throw new Error(`L'immagine è ancora troppo pesante: usane una più leggera di ${Math.round(maxByte / 1024)} KB.`);
+}

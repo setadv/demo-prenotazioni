@@ -37,6 +37,7 @@ const TABELLE_RISTORANTE = [
   "promozioni",
   "impostazioni_r",
   "media_r",
+  "menu_foto",
   "chiusure_r",
 ];
 
@@ -438,7 +439,7 @@ export async function salvaIntegrazioni(request, env, id, superadmin) {
 export async function esportaRistorante(env, id, superadmin) {
   const r = await richiedi(env, id);
   const dati = {};
-  for (const t of TABELLE_RISTORANTE.filter((t) => t !== "media_r")) {
+  for (const t of TABELLE_RISTORANTE.filter((t) => t !== "media_r" && t !== "menu_foto")) {
     dati[t] = (await env.DB.prepare(`SELECT * FROM ${t} WHERE ristorante_id = ?`).bind(id).all()).results;
   }
   const ids = (righe) => JSON.stringify(righe.map((x) => x.id));

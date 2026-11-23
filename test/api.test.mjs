@@ -570,6 +570,47 @@ test("la traduzione automatica riempie le quattro lingue senza salvare", async (
   assert.ok(!JSON.stringify(menu).includes("[en]"), "la traduzione non salva il menù");
 });
 
+test("la foto di un piatto è facoltativa e sparisce con il piatto", async () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  const piattoPubblico = async (id) => (await (await chiama("/api/menu")).json()).categorie.flatMap((c) => c.piatti).find((p) => p.id === id);
+  assert.equal((await piattoPubblico("margherita")).foto, null, "senza foto il piatto non ne indica nessuna");
+  assert.equal((await chiama("/api/menu/foto/margherita")).status, 404);
+
+  const percorso = "/api/admin/menu/foto/margherita";
+  assert.equal((await chiama(percorso, { method: "PUT", body: png, grezzo: true })).status, 401);
+  assert.equal((await admin(percorso, { method: "PUT", body: Buffer.from("<svg onload=x>"), grezzo: true })).status, 415);
+  assert.equal((await admin(percorso, { method: "PUT", body: Buffer.alloc(401 * 1024, 1), grezzo: true })).status, 413);
+  assert.equal((await admin("/api/admin/menu/foto/non-esiste", { method: "PUT", body: png, grezzo: true })).status, 404);
+  const caricata = await admin(percorso, { method: "PUT", body: png, grezzo: true });
+  assert.equal(caricata.status, 200);
+  const { foto } = await caricata.json();
+  assert.ok(foto);
+  assert.equal((await piattoPubblico("margherita")).foto, foto);
+
+  const letta = await chiama(`/api/menu/foto/margherita?v=${encodeURIComponent(foto)}`);
+  assert.equal(letta.headers.get("content-type"), "image/png");
+  assert.match(letta.headers.get("cache-control"), /immutable/);
+  assert.deepEqual(Buffer.from(await letta.arrayBuffer()), png);
+
+  // Salvare il menù (che riscrive i piatti) non cancella la foto.
+  const menu = await (await admin("/api/admin/menu")).json();
+  assert.equal(menu.categorie.flatMap((c) => c.piatti).find((p) => p.id === "margherita").foto, foto);
+  const pizze = menu.categorie.find((c) => c.id === "pizze");
+  pizze.piatti.push({ id: "foto-prova", nome: "Diavola", descrizione: "", prezzo: 900, allergeni: [], tag: [], traduzioni: {}, disponibile: true });
+  assert.equal((await admin("/api/admin/menu", { method: "PUT", body: { categorie: menu.categorie, nota: menu.nota } })).status, 200);
+  assert.equal((await piattoPubblico("margherita")).foto, foto);
+  assert.equal((await admin("/api/admin/menu/foto/foto-prova", { method: "PUT", body: png, grezzo: true })).status, 200);
+
+  // Eliminando il piatto sparisce anche la sua foto.
+  pizze.piatti = pizze.piatti.filter((p) => p.id !== "foto-prova");
+  assert.equal((await admin("/api/admin/menu", { method: "PUT", body: { categorie: menu.categorie, nota: menu.nota } })).status, 200);
+  assert.equal((await chiama("/api/menu/foto/foto-prova")).status, 404);
+
+  assert.equal((await admin(percorso, { method: "DELETE" })).status, 200);
+  assert.equal((await chiama("/api/menu/foto/margherita")).status, 404);
+  assert.equal((await piattoPubblico("margherita")).foto, null);
+});
+
 test("i QR code aprono solo pagine di questo sito", async () => {
   const generale = await chiama("/api/qr");
   assert.equal(generale.status, 200);

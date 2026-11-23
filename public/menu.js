@@ -72,6 +72,22 @@ function disegnaFiltro(presenti) {
 
 function schedaPiatto(p) {
   const art = crea("article", `piatto${p.disponibile ? "" : " esaurito"}`);
+  // La foto c'è solo se il ristorante l'ha caricata; se non si carica sparisce senza lasciare spazio.
+  if (p.foto) {
+    const img = crea("img", "foto-piatto");
+    img.alt = tradotto(p, "nome");
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.width = 96;
+    img.height = 96;
+    img.addEventListener("error", () => {
+      img.remove();
+      art.classList.remove("con-foto");
+    });
+    img.src = `/api/menu/foto/${encodeURIComponent(p.id)}?v=${encodeURIComponent(p.foto)}`;
+    art.classList.add("con-foto");
+    art.append(img);
+  }
   art.append(crea("h3", null, tradotto(p, "nome")), crea("span", "prezzo", prezzo(p.prezzo)));
   const descrizione = tradotto(p, "descrizione");
   if (descrizione) art.append(crea("p", "desc", descrizione));

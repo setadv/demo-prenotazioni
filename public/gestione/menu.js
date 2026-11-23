@@ -1,4 +1,4 @@
-import { $, api, apriDialogo, avviso, chiudiDialogo, h, paginaPubblica } from "./comune.js";
+import { $, api, apriDialogo, avviso, chiudiDialogo, h, paginaPubblica, ridimensiona } from "./comune.js";
 
 const ALLERGENI = {
   glutine: "Glutine",
@@ -142,6 +142,69 @@ export async function vistaMenu(contenitore) {
     return risultato;
   }
 
+  /** Aggiorna la foto di un piatto nella copia del menù già salvata, senza salvare di nuovo tutto il menù. */
+  function segnaFoto(id, foto) {
+    for (const c of menu.categorie) for (const x of c.piatti) if (x.id === id) x.foto = foto;
+    disegna();
+  }
+
+  /** Foto facoltativa del piatto: si carica e si toglie subito, a parte dal salvataggio della scheda. */
+  function bloccoFoto(piatto) {
+    const titolo = h("legend", { class: "piccola" }, "Foto del piatto (facoltativa)");
+    if (!piatto) return h("fieldset", { class: "foto-piatto" }, titolo, h("p", { class: "legenda" }, "Salva il piatto, poi riaprilo per aggiungere una foto."));
+    const anteprima = h("img", { class: "anteprima-foto-piatto", alt: `Foto di ${piatto.nome}`, hidden: true });
+    const esito = h("p", { class: "legenda", role: "status" });
+    const rimuovi = h("button", { type: "button", class: "secondario pericolo", hidden: true }, "Togli la foto");
+    const file = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", "aria-label": `Scegli la foto di ${piatto.nome}` });
+    const etichetta = h("span", { class: "legenda" });
+    const mostra = (versione) => {
+      anteprima.hidden = !versione;
+      rimuovi.hidden = !versione;
+      etichetta.textContent = versione ? "Scegli un'altra immagine per sostituirla." : "Senza foto il menù mostra solo il testo del piatto.";
+      if (versione) anteprima.src = `/api/menu/foto/${encodeURIComponent(piatto.id)}?v=${encodeURIComponent(versione)}`;
+      else anteprima.removeAttribute("src");
+    };
+    file.addEventListener("change", async () => {
+      const scelto = file.files[0];
+      if (!scelto) return;
+      esito.textContent = "Preparo la foto.";
+      try {
+        const dati = await ridimensiona(scelto, 1200, 380 * 1024, { jpg: true });
+        esito.textContent = "Carico la foto.";
+        const r = await api(`/api/admin/menu/foto/${encodeURIComponent(piatto.id)}`, { metodo: "PUT", corpo: dati, grezzo: true });
+        piatto.foto = r.foto;
+        segnaFoto(piatto.id, r.foto);
+        mostra(r.foto);
+        esito.textContent = "Foto salvata. La vedi già nel menù online.";
+      } catch (e) {
+        esito.textContent = e.message;
+      }
+      file.value = "";
+    });
+    rimuovi.addEventListener("click", async () => {
+      try {
+        await api(`/api/admin/menu/foto/${encodeURIComponent(piatto.id)}`, { metodo: "DELETE" });
+        piatto.foto = null;
+        segnaFoto(piatto.id, null);
+        mostra(null);
+        esito.textContent = "Foto tolta.";
+      } catch (e) {
+        esito.textContent = e.message;
+      }
+    });
+    mostra(piatto.foto);
+    return h(
+      "fieldset",
+      { class: "foto-piatto" },
+      titolo,
+      anteprima,
+      h("div", { class: "azioni" }, file, rimuovi),
+      etichetta,
+      h("p", { class: "legenda" }, "JPG, PNG o WebP. Meglio orizzontale o quadrata, almeno 800 px: le foto grandi vengono ridotte da sole."),
+      esito,
+    );
+  }
+
   function apriPiatto(categoriaId, piatto = null) {
     const p = piatto ?? { nome: "", descrizione: "", prezzo: null, allergeni: [], tag: [], traduzioni: {}, disponibile: true, asporto: true };
     const errore = h("p", { class: "messaggio", role: "alert", hidden: true });
@@ -164,6 +227,7 @@ export async function vistaMenu(contenitore) {
         h("label", { class: "spunta largo" }, h("input", { type: "checkbox", name: "disponibile", checked: p.disponibile }), h("span", {}, "Disponibile oggi")),
         h("label", { class: "spunta largo" }, h("input", { type: "checkbox", name: "asporto", checked: p.asporto !== false }), h("span", {}, "Ordinabile da asporto e a domicilio (serve il prezzo)")),
       ),
+      bloccoFoto(piatto),
       h(
         "fieldset",
         { class: "griglia-spunte" },
@@ -320,7 +384,10 @@ export async function vistaMenu(contenitore) {
     const lingue = Object.keys(p.traduzioni ?? {}).length;
     return h(
       "li",
-      { class: `voce-menu${p.disponibile ? "" : " esaurito"}` },
+      { class: `voce-menu${p.disponibile ? "" : " esaurito"}${p.foto ? " con-foto" : ""}` },
+      p.foto
+        ? h("img", { class: "voce-menu-foto", src: `/api/menu/foto/${encodeURIComponent(p.id)}?v=${encodeURIComponent(p.foto)}`, alt: "", loading: "lazy", width: 56, height: 56 })
+        : null,
       h(
         "div",
         { class: "voce-menu-testo" },

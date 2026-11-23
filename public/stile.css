@@ -285,6 +285,15 @@ input::placeholder, textarea::placeholder { color: #70837b; }
 .allergeni-piatto { color: var(--grigio); }
 .piatto.esaurito h3, .piatto.esaurito .prezzo, .piatto.esaurito .desc { opacity: .55; }
 .piatto.esaurito h3 { text-decoration: line-through; }
+/* Foto facoltativa: la colonna esiste solo per i piatti che ne hanno una. */
+.piatto.con-foto { grid-template-columns: 96px 1fr auto; align-content: start; }
+.piatto.con-foto .foto-piatto { grid-column: 1; grid-row: 1 / span 3; width: 96px; height: 96px; object-fit: cover; border-radius: 6px; background: var(--celadon); }
+.piatto.con-foto .desc, .piatto.con-foto .segni { grid-column: 2 / -1; }
+.piatto.esaurito .foto-piatto { opacity: .55; }
+@media (max-width: 480px) {
+  .piatto.con-foto { grid-template-columns: 72px 1fr auto; column-gap: .75rem; }
+  .piatto.con-foto .foto-piatto { width: 72px; height: 72px; }
+}
 .etichetta-esaurito { font-weight: 600; color: var(--melograno-scuro); }
 .nota-menu { margin: 2rem 0 .5rem; padding: .9rem 1rem; background: var(--bianco); border-left: 4px solid var(--ocra); border-radius: 4px; }
 .cta-menu { display: inline-block; width: auto; margin-top: 1.5rem; padding: .8rem 1.4rem; text-decoration: none; }
