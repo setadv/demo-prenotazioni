@@ -451,8 +451,21 @@ export async function vistaImpostazioni(contenitore) {
       h(
         "div",
         { class: "immagini" },
-        blocco("logo", "Logo", "Compare in cima alla pagina di prenotazione. Meglio un PNG con sfondo trasparente.", 500, 800),
-        blocco("foto", "Foto del locale", "Compare sotto il nome del ristorante. Le foto grandi vengono ridotte in automatico.", 1500, 1600, true),
+        blocco(
+          "logo",
+          "Logo",
+          "Compare in cima alla pagina di prenotazione. Formato consigliato: PNG con sfondo trasparente, orizzontale, circa 440 × 220 px (proporzione 2:1). Va bene anche JPG o WebP, fino a 500 KB.",
+          500,
+          800,
+        ),
+        blocco(
+          "foto",
+          "Foto del locale",
+          "Compare sotto il nome del ristorante. Formato consigliato: JPG orizzontale, almeno 1600 × 1067 px (proporzione 3:2), con il soggetto al centro: i bordi possono essere tagliati su computer e telefono. Le foto più grandi vengono ridotte in automatico.",
+          1500,
+          1600,
+          true,
+        ),
       ),
     );
   }
