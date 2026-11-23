@@ -1,4 +1,41 @@
-import { GIORNI, ORDINE_GIORNI, api, apriDialogo, avviso, chiudiDialogo, condiviso, h, oggiRoma } from "./comune.js";
+import { GIORNI, ORDINE_GIORNI, api, apriDialogo, avviso, chiudiDialogo, condiviso, h, oggiRoma, paginaPubblica } from "./comune.js";
+
+/** Indirizzo della pagina di prenotazione del ristorante, da aprire in anteprima o da copiare. */
+function bloccoPaginaPubblica() {
+  const link = new URL(paginaPubblica("/"), location.origin).href;
+  const campo = h("input", { id: "link-pagina-pubblica", readonly: true, value: link, "aria-label": "Indirizzo della tua pagina di prenotazione", onfocus: (e) => e.target.select() });
+  const copia = h(
+    "button",
+    {
+      type: "button",
+      class: "secondario",
+      onclick: async () => {
+        try {
+          await navigator.clipboard.writeText(link);
+          copia.textContent = "Link copiato";
+        } catch {
+          campo.focus();
+          copia.textContent = "Premi Ctrl+C per copiare";
+        }
+        setTimeout(() => (copia.textContent = "Copia il link"), 2500);
+      },
+    },
+    "Copia il link",
+  );
+  return h(
+    "section",
+    { class: "blocco pagina-pubblica" },
+    h("h2", {}, "La tua pagina di prenotazione"),
+    h("p", { class: "legenda" }, "È l'indirizzo da mettere sul sito, sul profilo Google e sui social. L'anteprima mostra le impostazioni salvate."),
+    h(
+      "div",
+      { class: "riga-link" },
+      campo,
+      copia,
+      h("a", { class: "azione compatta pulsante-link", href: link, target: "_blank", rel: "noopener" }, "Apri l'anteprima"),
+    ),
+  );
+}
 
 /** Riduce le immagini troppo grandi prima del caricamento. Il PNG resta PNG per conservare la trasparenza. */
 async function ridimensiona(file, maxLato, maxByte) {
@@ -530,7 +567,7 @@ export async function vistaImpostazioni(contenitore) {
     }
   });
 
-  contenitore.append(h("div", { class: "testata-vista" }, h("h1", {}, "Impostazioni")), modulo);
+  contenitore.append(h("div", { class: "testata-vista" }, h("h1", {}, "Impostazioni")), bloccoPaginaPubblica(), modulo);
   riempi();
 
   return {
